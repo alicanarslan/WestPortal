@@ -1,0 +1,146 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Public profile of a registered gamer",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "username": { "type": "string" },
+        "avatarId": { "type": "string" },
+        "avatarBg": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "username", "avatarId", "avatarBg", "createdAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "A real-time chat message in a channel",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "channel": { "type": "string" },
+        "author": { "type": "string" },
+        "avatarId": { "type": "string" },
+        "avatarBg": { "type": "string" },
+        "text": { "type": "string" },
+        "date": { "type": "string" },
+        "role": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lfgData": {
+          "type": "object",
+          "properties": {
+            "gameId": { "type": "number" },
+            "gameTitle": { "type": "string" },
+            "playersNeeded": { "type": "number" },
+            "slotsJoined": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "maxSlots": { "type": "number" }
+          }
+        }
+      },
+      "required": ["id", "channel", "author", "avatarId", "avatarBg", "text", "date", "createdAt"]
+    },
+    "Game": {
+      "title": "Game",
+      "description": "A multiplayer game synchronized in the library",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "title": { "type": "string" },
+        "tagline": { "type": "string" },
+        "description": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "forbiddenTags": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "imageUrl", "tags"]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "A gamer's review of a specific game",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "gameId": { "type": "number" },
+        "author": { "type": "string" },
+        "rating": { "type": "number" },
+        "comment": { "type": "string" },
+        "recommend": { "type": "boolean" },
+        "date": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "gameId", "author", "rating", "comment", "recommend", "date", "createdAt"]
+    },
+    "Event": {
+      "title": "Event",
+      "description": "A planned game night lobi",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "gameId": { "type": "number" },
+        "title": { "type": "string" },
+        "organizer": { "type": "string" },
+        "date": { "type": "string" },
+        "maxPlayers": { "type": "number" },
+        "players": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "description": { "type": "string" },
+        "gameMode": { "type": "string" },
+        "discordChannel": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "gameId", "title", "organizer", "date", "maxPlayers", "players", "createdAt"]
+    },
+    "EventComment": {
+      "title": "EventComment",
+      "description": "A coordinating message within a planned game night lobby",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "author": { "type": "string" },
+        "text": { "type": "string" },
+        "date": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "author", "text", "date", "createdAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "User profile collection"
+    },
+    "messages/{messageId}": {
+      "schema": "Message",
+      "description": "Lounge real-time channels chat messages"
+    },
+    "games/{gameId}": {
+      "schema": "Game",
+      "description": "Game catalog elements synchronized in real-time"
+    },
+    "reviews/{reviewId}": {
+      "schema": "Review",
+      "description": "Game rating review comments"
+    },
+    "events/{eventId}": {
+      "schema": "Event",
+      "description": "Lobby events planning items"
+    },
+    "events/{eventId}/comments/{commentId}": {
+      "schema": "EventComment",
+      "description": "Real-time coordination chat logs within an event lobby"
+    }
+  }
+}

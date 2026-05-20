@@ -1,0 +1,132 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global Safety Net - Default Deny Catch-All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helper Primitives & Functions ---
+    function isSignedIn() { return request.auth != null; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == "deeptoneblack@gmail.com" ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isValidId(id) { 
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+
+    // --- Validation Rules ---
+    function isValidUserDoc(data) {
+      return data.uid == request.auth.uid &&
+             data.username is string && data.username.size() >= 2 && data.username.size() <= 50 &&
+             data.avatarId is string && data.avatarId.size() <= 50 &&
+             data.avatarBg is string && data.avatarBg.size() <= 100;
+    }
+
+    function isValidMessageDoc(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.channel is string && data.channel.size() <= 100 &&
+             data.author is string && data.author.size() <= 50 &&
+             data.avatarId is string && data.avatarId.size() <= 50 &&
+             data.avatarBg is string && data.avatarBg.size() <= 100 &&
+             data.text is string && data.text.size() <= 2000 &&
+             data.date is string && data.date.size() <= 50 &&
+             data.createdAt == request.time;
+    }
+
+    function isValidGameDoc(data) {
+      return data.id is int &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 150 &&
+             data.imageUrl is string && data.imageUrl.size() <= 1000 &&
+             data.tags is list && data.tags.size() <= 20;
+    }
+
+    function isValidReviewDoc(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.gameId is int &&
+             data.author is string && data.author.size() <= 50 &&
+             data.rating is int && data.rating >= 1 && data.rating <= 5 &&
+             data.comment is string && data.comment.size() <= 2000 &&
+             data.recommend is bool &&
+             data.date is string && data.date.size() <= 50 &&
+             data.createdAt == request.time;
+    }
+
+    function isValidEventDoc(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.gameId is int &&
+             data.title is string && data.title.size() >= 3 && data.title.size() <= 200 &&
+             data.organizer is string && data.organizer.size() <= 100 &&
+             data.date is string && data.date.size() <= 50 &&
+             data.maxPlayers is int && data.maxPlayers >= 2 && data.maxPlayers <= 100 &&
+             data.players is list && data.players.size() <= data.maxPlayers &&
+             data.createdAt == request.time;
+    }
+
+    function isValidEventCommentDoc(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.author is string && data.author.size() <= 100 &&
+             data.text is string && data.text.size() <= 2000 &&
+             data.date is string && data.date.size() <= 100 &&
+             data.createdAt == request.time;
+    }
+
+    // --- Path Mappings ---
+
+    // USERS profiles
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && request.auth.uid == userId && isValidUserDoc(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // CHAT messages
+    match /messages/{messageId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(messageId) && isValidMessageDoc(incoming());
+      allow update, delete: if isAdmin();
+    }
+
+    // GAMES store data
+    match /games/{gameId} {
+      allow read: if true; // public catalog
+      allow create, update: if isAdmin() && isValidGameDoc(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // REVIEWS for games
+    match /reviews/{reviewId} {
+      allow read: if true; // public
+      allow create: if isSignedIn() && isValidId(reviewId) && isValidReviewDoc(incoming());
+      allow update, delete: if isSignedIn() && (existing().author == request.auth.uid || isAdmin());
+    }
+
+    // EVENTS lobbies
+    match /events/{eventId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(eventId) && isValidEventDoc(incoming());
+      allow update: if isSignedIn() && isValidId(eventId) && (
+        // Case 1: Organizer makes generic edits
+        (existing().organizer == request.auth.uid || existing().organizer == request.auth.token.name || isAdmin()) && isValidEventDoc(incoming()) ||
+        // Case 2: Someone joins/leaves (modifying ONLY the players list)
+        (incoming().diff(existing()).affectedKeys().hasOnly(['players']) && incoming().players is list && incoming().players.size() <= existing().maxPlayers)
+      );
+      allow delete: if isSignedIn() && (existing().organizer == request.auth.uid || existing().organizer == request.auth.token.name || isAdmin());
+      
+      // Subcollection: comments
+      match /comments/{commentId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && isValidId(commentId) && isValidEventCommentDoc(incoming());
+        allow update, delete: if isAdmin();
+      }
+    }
+  }
+}

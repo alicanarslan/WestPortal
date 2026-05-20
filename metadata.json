@@ -1,0 +1,6 @@
+{
+  "name": "WestPortal Gamer Hub",
+  "description": "Arkadaşlarınızla oyunları görebileceğiniz, inceleyebileceğiniz ve heyecan verici ve canlı bir Steam tarzı arayüzde gezinebileceğiniz özel oyun portalı.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
