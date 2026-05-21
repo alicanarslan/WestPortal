@@ -38,6 +38,55 @@ export default function ChatInput({
     ? `${matchedDm ? matchedDm.user.name : "Oyuncu"} ile doğrudan yazış...`
     : `Sohbet odasına yazın (#${activeChannel})...`;
 
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.indexOf("image") !== -1) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (!file) continue;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement("canvas");
+            let width = img.width;
+            let height = img.height;
+            const MAX_DIM = 800;
+
+            if (width > MAX_DIM || height > MAX_DIM) {
+              if (width > height) {
+                height = Math.round((height * MAX_DIM) / width);
+                width = MAX_DIM;
+              } else {
+                width = Math.round((width * MAX_DIM) / height);
+                height = MAX_DIM;
+              }
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext("2d");
+            if (ctx) {
+              ctx.drawImage(img, 0, 0, width, height);
+              const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+              setAttachedImage(dataUrl);
+            }
+          };
+          if (event.target?.result) {
+            img.src = event.target.result as string;
+          }
+        };
+        reader.readAsDataURL(file);
+        break;
+      }
+    }
+  };
+
   return (
     <div className="flex flex-col relative w-full">
       {/* Image attachment preview */}
@@ -86,7 +135,7 @@ export default function ChatInput({
               className={`p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-center ${
                 isDarkMode 
                   ? "bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-850" 
-                  : "bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200 hover:text-slate-900"
+                  : "bg-slate-100 border-slate-200 text-slate-650 hover:bg-slate-200 hover:text-slate-900"
               }`}
               title="Resim Ekle"
             >
@@ -102,7 +151,7 @@ export default function ChatInput({
               className={`p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-center ${
                 isDarkMode 
                   ? "bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800" 
-                  : "bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200 hover:text-slate-900"
+                  : "bg-slate-100 border-slate-200 text-slate-605 hover:bg-slate-200 hover:text-slate-900"
               }`}
               title="Emoji Ekle"
             >
@@ -142,6 +191,7 @@ export default function ChatInput({
             type="text"
             value={textInput}
             onChange={(e) => setTextInput(e.target.value)}
+            onPaste={handlePaste}
             placeholder={placeholderText}
             className={`flex-1 text-xs p-3 rounded-xl border focus:outline-none focus:ring-1 transition-all font-sans ${
               isDarkMode 

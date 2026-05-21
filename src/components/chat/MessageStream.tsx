@@ -1,7 +1,30 @@
 import * as React from "react";
 import { motion } from "motion/react";
-import { MessageSquare, Trash2, Gamepad2 } from "lucide-react";
+import { MessageSquare, Trash2, Gamepad2, Pin, X } from "lucide-react";
 import { GamerProfile } from "../profile/LoginModal";
+
+function linkify(text: string): React.ReactNode[] {
+  if (!text) return [];
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const parts = text.split(urlRegex);
+  
+  return parts.map((part, index) => {
+    if (part.match(urlRegex)) {
+      return (
+        <a 
+          key={index} 
+          href={part} 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          className="text-cyan-400 hover:underline break-all font-semibold"
+        >
+          {part}
+        </a>
+      );
+    }
+    return part;
+  });
+}
 
 function formatText(text: string): React.ReactNode[] {
   if (!text) return [];
@@ -38,7 +61,7 @@ function formatText(text: string): React.ReactNode[] {
         </em>
       );
     }
-    return part;
+    return <React.Fragment key={index}>{linkify(part)}</React.Fragment>;
   });
 }
 
@@ -83,6 +106,7 @@ interface Message {
     slotsJoined: string[];
     maxSlots: number;
   };
+  isPinned?: boolean;
 }
 
 interface MessageStreamProps {
@@ -93,6 +117,7 @@ interface MessageStreamProps {
   handleJoinLfgSlot: (msgId: string) => void;
   activeDms: any[];
   onClearHistory: () => void;
+  onTogglePin?: (msgId: string, currentPinStatus: boolean) => void;
 }
 
 export default function MessageStream({
@@ -102,7 +127,8 @@ export default function MessageStream({
   isDarkMode,
   handleJoinLfgSlot,
   activeDms,
-  onClearHistory
+  onClearHistory,
+  onTogglePin
 }: MessageStreamProps) {
   const isDm = activeChannel.includes("_dm_") || activeChannel.startsWith("dm_");
   let channelTitle = `#${activeChannel}`;
@@ -115,6 +141,14 @@ export default function MessageStream({
   }
 
   const filteredMessages = messages.filter(m => m.channel === activeChannel);
+
+  const [showPinnedPanel, setShowPinnedPanel] = React.useState(false);
+
+  const pinnedMessages = React.useMemo(() => {
+    return filteredMessages.filter(m => m.isPinned);
+  }, [filteredMessages]);
+
+  const pinnedMessagesCount = pinnedMessages.length;
 
   const streamContainerRef = React.useRef<HTMLDivElement | null>(null);
   const prevChannelRef = React.useRef<string>(activeChannel);
@@ -139,7 +173,7 @@ export default function MessageStream({
   }, [filteredMessages.length, activeChannel]);
 
   return (
-    <div className={`lg:col-span-6 flex flex-col h-[550px] relative transition-all duration-300 ${
+    <div className={`flex-1 flex flex-col min-h-0 relative transition-all duration-300 ${
       isDarkMode ? "bg-slate-950/40" : "bg-slate-50/40 border-l border-r border-slate-200/80"
     }`}>
       
@@ -156,14 +190,33 @@ export default function MessageStream({
           </span>
         </div>
 
-        <button
-          type="button"
-          onClick={onClearHistory}
-          title="Bu kanal geçmişini temizle"
-          className="text-[10px] font-mono text-slate-600 hover:text-rose-400 transition-colors flex items-center gap-1 cursor-pointer"
-        >
-          <Trash2 className="w-3.5 h-3.5" /> Tekil Temizle
-        </button>
+        <div className="flex items-center gap-2.5">
+          {!isDm && (
+            <button
+              type="button"
+              onClick={() => setShowPinnedPanel(!showPinnedPanel)}
+              className={`text-[10.5px] font-mono transition-colors flex items-center gap-1 cursor-pointer py-1 px-2 rounded-lg border ${
+                showPinnedPanel 
+                  ? "bg-cyan-500/10 border-cyan-500/40 text-cyan-400" 
+                  : isDarkMode
+                  ? "border-slate-800 text-slate-400 hover:text-white"
+                  : "border-slate-200 text-slate-650 hover:bg-slate-100"
+              }`}
+            >
+              <Pin className="w-3.5 h-3.5 text-cyan-450 shrink-0" />
+              <span>Sabitlenenler ({pinnedMessagesCount})</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={onClearHistory}
+            title="Bu kanal geçmişini temizle"
+            className="text-[10px] font-mono text-slate-600 hover:text-rose-450 transition-colors flex items-center gap-1 cursor-pointer"
+          >
+            <Trash2 className="w-3.5 h-3.5" /> Tekil Temizle
+          </button>
+        </div>
       </div>
 
       {/* Messages list bucket */}
@@ -223,10 +276,27 @@ export default function MessageStream({
                     <span className="text-[9px] text-slate-500 font-mono">
                       {msg.date}
                     </span>
+
+                    {onTogglePin && !isDm && (
+                      <button
+                        type="button"
+                        onClick={() => onTogglePin(msg.id, !!msg.isPinned)}
+                        className={`p-0.5 rounded transition-all cursor-pointer ${
+                          msg.isPinned 
+                            ? "text-cyan-400 hover:text-cyan-300" 
+                            : "text-slate-650 hover:text-slate-400"
+                        }`}
+                        title={msg.isPinned ? "İletiyi Sabitten Kaldır" : "İletiyi Sabitle"}
+                      >
+                        <Pin className={`w-3 h-3 ${msg.isPinned ? "fill-cyan-400/25" : ""}`} />
+                      </button>
+                    )}
                   </div>
 
                   {/* Rendering main bubble text */}
                   <div className={`p-3 rounded-2xl text-xs leading-relaxed font-sans relative ${
+                    msg.isPinned ? "ring-1 ring-cyan-500/50" : ""
+                  } ${
                     isUser
                       ? isDarkMode
                         ? "bg-gradient-to-br from-indigo-900/60 to-slate-900 text-slate-100 rounded-tr-none border border-indigo-800/20"
@@ -380,6 +450,81 @@ export default function MessageStream({
           })
         )}
       </div>
+
+      {/* Pinned Messages Sidebar/Overlay */}
+      {showPinnedPanel && (
+        <div className={`absolute top-[49px] bottom-0 right-0 w-80 z-20 border-l flex flex-col shadow-2xl transition-all duration-300 ${
+          isDarkMode 
+            ? "bg-[#090e18]/95 backdrop-blur-xl border-slate-900" 
+            : "bg-white/95 backdrop-blur-xl border-slate-205"
+        }`}>
+          {/* Header */}
+          <div className="p-3 border-b flex items-center justify-between shrink-0">
+            <span className="text-[10px] font-black uppercase tracking-widest font-mono text-cyan-550 flex items-center gap-1.5">
+              <Pin className="w-3.5 h-3.5 text-cyan-500 shrink-0" />
+              SABİTLENEN İLETİLER
+            </span>
+            <button
+              onClick={() => setShowPinnedPanel(false)}
+              className="p-1 hover:bg-rose-500/10 text-rose-500 rounded-md transition-all cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* List of Pinned Messages */}
+          <div className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-thin">
+            {pinnedMessages.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center p-4 text-slate-500 space-y-2">
+                <Pin className="w-8 h-8 text-slate-800 animate-pulse" />
+                <p className="text-xs font-bold font-sans">Henüz sabitlenmiş ileti yok.</p>
+                <p className="text-[10px] text-slate-600 font-sans font-medium">
+                  Önemli iletileri sabitlemek için yanlarındaki raptiye simgesine tıklayın.
+                </p>
+              </div>
+            ) : (
+              pinnedMessages.map((pMsg) => (
+                <div 
+                  key={pMsg.id}
+                  className={`p-2.5 rounded-xl border flex flex-col gap-1.5 transition-all text-xs ${
+                    isDarkMode 
+                      ? "bg-slate-900/60 border-slate-800 text-slate-300" 
+                      : "bg-slate-50 border-slate-200 text-slate-700 shadow-sm"
+                  }`}
+                >
+                  <div className="flex items-center justify-between border-b pb-1 border-slate-800/40">
+                    <span className="font-extrabold text-cyan-500">{pMsg.author}</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[9px] text-slate-500 font-mono">{pMsg.date}</span>
+                      {onTogglePin && (
+                        <button
+                          onClick={() => onTogglePin(pMsg.id, true)}
+                          className="p-0.5 text-rose-500 hover:text-rose-400 rounded transition-colors cursor-pointer"
+                          title="Sabitten Kaldır"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="whitespace-pre-wrap font-sans text-[11px] leading-relaxed select-text">
+                    {parseMarkdown(pMsg.text)}
+                  </div>
+
+                  {pMsg.imageUrl && (
+                    <img 
+                      src={pMsg.imageUrl} 
+                      alt="Pinned Shared Image" 
+                      className="max-w-full max-h-[100px] object-cover rounded-lg border border-slate-800"
+                    />
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

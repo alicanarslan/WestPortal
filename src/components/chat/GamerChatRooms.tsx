@@ -29,6 +29,7 @@ interface Message {
     slotsJoined: string[];
     maxSlots: number;
   };
+  isPinned?: boolean;
 }
 
 interface GamerChatRoomsProps {
@@ -303,6 +304,17 @@ export default function GamerChatRooms({
     }
   };
 
+  const handleTogglePin = async (msgId: string, currentPinStatus: boolean) => {
+    try {
+      const docRef = doc(db, "messages", msgId);
+      await setDoc(docRef, {
+        isPinned: !currentPinStatus
+      }, { merge: true });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `messages/${msgId}`);
+    }
+  };
+
   const clearChannelHistory = async () => {
     try {
       const dbMessages = messages.filter(m => m.channel === activeChannel);
@@ -373,6 +385,7 @@ export default function GamerChatRooms({
             handleJoinLfgSlot={handleJoinLfgSlot}
             activeDms={activeDms}
             onClearHistory={clearChannelHistory}
+            onTogglePin={handleTogglePin}
           />
 
           <ChatInput

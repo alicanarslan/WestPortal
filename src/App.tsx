@@ -15,10 +15,10 @@ import LoginModal, { GamerProfile } from "./components/profile/LoginModal";
 import GamerProfileModal from "./components/profile/GamerProfileModal";
 import GamerVoiceChat from "./components/layout/GamerVoiceChat";
 import { 
-  Gamepad2, AlertCircle, RefreshCw, Search, SlidersHorizontal
+  Gamepad2, AlertCircle, RefreshCw, Search, SlidersHorizontal, Minus
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { auth, db, handleFirestoreError, OperationType } from "./lib/firebase";
+import { auth, db, handleFirestoreError, OperationType, cleanUndefined } from "./lib/firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc, setDoc, deleteDoc, collection, onSnapshot, query, orderBy, serverTimestamp, writeBatch } from "firebase/firestore";
 
@@ -288,6 +288,13 @@ export default function App() {
   };
 
   const [activeVoiceChannelId, setActiveVoiceChannelId] = useState<string | null>(null);
+  const [isVoiceMinimized, setIsVoiceMinimized] = useState(false);
+
+  useEffect(() => {
+    if (activeVoiceChannelId) {
+      setIsVoiceMinimized(false);
+    }
+  }, [activeVoiceChannelId]);
   const [onlinePlayers, setOnlinePlayers] = useState<any[]>([]);
 
   const [games, setGames] = useState<Game[]>([]);
@@ -435,7 +442,7 @@ export default function App() {
   // Handler to add a single game retrieved via Steam API
   const handleImportSingleGame = async (newGame: Game) => {
     try {
-      await setDoc(doc(db, "games", String(newGame.id)), newGame);
+      await setDoc(doc(db, "games", String(newGame.id)), cleanUndefined(newGame));
 
       if (newGame.steamReviews && Array.isArray(newGame.steamReviews)) {
         const batch = writeBatch(db);
@@ -496,7 +503,7 @@ export default function App() {
 
   const handleUpdateGame = async (updatedGame: Game) => {
     try {
-      await setDoc(doc(db, "games", String(updatedGame.id)), updatedGame);
+      await setDoc(doc(db, "games", String(updatedGame.id)), cleanUndefined(updatedGame));
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `games/${updatedGame.id}`);
     }
@@ -944,26 +951,43 @@ export default function App() {
             initial={{ opacity: 0, y: 30, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 30, scale: 0.95 }}
-            className="fixed bottom-6 right-6 z-50 max-w-sm w-full md:w-[340px]"
+            className={`fixed bottom-6 right-6 z-50 transition-all duration-300 ${
+              isVoiceMinimized ? "w-[280px]" : "max-w-sm w-full md:w-[340px]"
+            }`}
           >
-            <div className={`p-4 rounded-2xl shadow-2xl border transition-all duration-300 ${
+            <div className={`rounded-2xl shadow-2xl border transition-all duration-300 ${
+              isVoiceMinimized ? "p-2.5" : "p-4"
+            } ${
               isDarkMode 
                 ? "bg-[#090e18]/95 backdrop-blur-xl border-slate-800/80 shadow-cyan-950/20 text-white" 
                 : "bg-white/95 backdrop-blur-xl border-slate-200 shadow-xl text-slate-800"
             }`}>
-              <div className={`flex items-center justify-between border-b pb-2 mb-3 ${
-                isDarkMode ? "border-slate-800" : "border-slate-100"
-              }`}>
-                <span className="text-[10px] font-black uppercase tracking-widest font-mono text-cyan-500 flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-                  AKTİF SES BAĞLANTISI
-                </span>
-                <span className={`text-[9.5px] px-1.5 py-0.5 rounded font-mono font-bold uppercase tracking-wider ${
-                  isDarkMode ? "bg-slate-900 text-slate-400" : "bg-slate-100 text-slate-600"
+              {!isVoiceMinimized && (
+                <div className={`flex items-center justify-between border-b pb-2 mb-3 ${
+                  isDarkMode ? "border-slate-800" : "border-slate-100"
                 }`}>
-                  CANLI
-                </span>
-              </div>
+                  <span className="text-[10px] font-black uppercase tracking-widest font-mono text-cyan-500 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                    AKTİF SES BAĞLANTISI
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setIsVoiceMinimized(true)}
+                      className={`p-1 rounded transition-colors cursor-pointer ${
+                        isDarkMode ? "hover:bg-slate-800/50 text-slate-400 hover:text-white" : "hover:bg-slate-100 text-slate-650 hover:text-black"
+                      }`}
+                      title="Simge Durumuna Getir"
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                    </button>
+                    <span className={`text-[9.5px] px-1.5 py-0.5 rounded font-mono font-bold uppercase tracking-wider ${
+                      isDarkMode ? "bg-slate-900 text-slate-400" : "bg-slate-100 text-slate-600"
+                    }`}>
+                      CANLI
+                    </span>
+                  </div>
+                </div>
+              )}
               
               <GamerVoiceChat 
                 gamerProfile={gamerProfile}
@@ -971,6 +995,8 @@ export default function App() {
                 activeVoiceChannelId={activeVoiceChannelId}
                 onJoinChannel={setActiveVoiceChannelId}
                 isDarkMode={isDarkMode}
+                isMinimized={isVoiceMinimized}
+                onToggleMinimize={() => setIsVoiceMinimized(!isVoiceMinimized)}
               />
             </div>
           </motion.div>

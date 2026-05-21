@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { 
   Mic, MicOff, PhoneOff, Volume2, ShieldAlert, Signal, 
-  User, CheckCircle2, Radio, Activity, Sparkles 
+  User, CheckCircle2, Radio, Activity, Sparkles, Maximize2
 } from "lucide-react";
 import { db } from "../../lib/firebase";
 import { doc, setDoc } from "firebase/firestore";
@@ -27,6 +27,8 @@ interface GamerVoiceChatProps {
   activeVoiceChannelId: string | null;
   onJoinChannel: (channelId: string | null) => void;
   isDarkMode?: boolean;
+  isMinimized?: boolean;
+  onToggleMinimize?: () => void;
 }
 
 export default function GamerVoiceChat({ 
@@ -34,12 +36,18 @@ export default function GamerVoiceChat({
   onlinePlayers,
   activeVoiceChannelId,
   onJoinChannel,
-  isDarkMode = true
+  isDarkMode = true,
+  isMinimized = false,
+  onToggleMinimize
 }: GamerVoiceChatProps) {
   const [isMuted, setIsMuted] = useState(false);
   const [connectionState, setConnectionState] = useState<"disconnected" | "connecting" | "connected" | "failed">("disconnected");
   const [isDemo, setIsDemo] = useState(false);
   const [canPlayAudio, setCanPlayAudio] = useState(true);
+  
+  // Ref tracking for join/leave sounds
+  const prevOccupantsRef = useRef<string[]>([]);
+  const isFirstLoadRef = useRef(true);
   
   // Audio level representations
   const [localAudioLevel, setLocalAudioLevel] = useState<number>(0);
@@ -384,12 +392,156 @@ export default function GamerVoiceChat({
     return onlinePlayers.filter(p => p.activeVoiceChannel === activeVoiceChannelId);
   }, [onlinePlayers, activeVoiceChannelId]);
 
+  // Play sound notifications (join/leave) using Web Audio API oscillators
+  const playNotificationSound = (type: "join" | "leave") => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      
+      const now = ctx.currentTime;
+      if (type === "join") {
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(523.25, now); // C5
+        osc.frequency.exponentialRampToValueAtTime(783.99, now + 0.15); // G5
+        
+        gain.gain.setValueAtTime(0.15, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+        
+        osc.start(now);
+        osc.stop(now + 0.3);
+      } else {
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(392.00, now); // G4
+        osc.frequency.exponentialRampToValueAtTime(261.63, now + 0.2); // C4
+        
+        gain.gain.setValueAtTime(0.15, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+        
+        osc.start(now);
+        osc.stop(now + 0.35);
+      }
+    } catch (e) {
+      console.warn("Failed to play notification chime:", e);
+    }
+  };
+
+  // Monitor occupants changes and trigger chimes on join/leave
+  useEffect(() => {
+    if (connectionState !== "connected" || !activeVoiceChannelId) {
+      prevOccupantsRef.current = [];
+      isFirstLoadRef.current = true;
+      return;
+    }
+
+    const currentUids = occupants.map(o => o.uid);
+    const myUid = gamerProfile?.uid;
+
+    if (isFirstLoadRef.current) {
+      prevOccupantsRef.current = currentUids;
+      isFirstLoadRef.current = false;
+      return;
+    }
+
+    const joined = currentUids.filter(uid => !prevOccupantsRef.current.includes(uid));
+    const left = prevOccupantsRef.current.filter(uid => !currentUids.includes(uid));
+
+    const otherJoined = joined.filter(uid => uid !== myUid);
+    const otherLeft = left.filter(uid => uid !== myUid);
+
+    if (otherJoined.length > 0) {
+      playNotificationSound("join");
+    } else if (otherLeft.length > 0) {
+      playNotificationSound("leave");
+    }
+
+    prevOccupantsRef.current = currentUids;
+  }, [occupants, connectionState, activeVoiceChannelId, gamerProfile]);
+
   // Disable simulation engine as mock bots are officially removed from layout
   useEffect(() => {
     return;
   }, []);
 
   if (connectionState === "disconnected") return null;
+
+  if (isMinimized) {
+    return (
+      <div 
+        id="active-gamer-voice-station-minimized"
+        className="flex items-center justify-between gap-2"
+      >
+        {/* Status/Channel Name */}
+        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+          <div className="relative shrink-0 flex animate-pulse">
+            <Radio className="w-3.5 h-3.5 text-cyan-400" />
+            <div className="absolute top-0 right-0 h-1 w-1 rounded-full bg-emerald-400" />
+          </div>
+          <div className="min-w-0">
+            <span className={`text-[11px] font-black truncate uppercase font-sans ${
+              isDarkMode ? "text-slate-200" : "text-slate-800"
+            }`}>
+              {activeChannel?.name ? activeChannel.name.replace(/[^a-zA-Z0-9\sğıüşöçĞİÜŞÖÇ]/g, '').trim() : "Ses"}
+            </span>
+          </div>
+        </div>
+
+        {/* Action Row */}
+        <div className="flex items-center gap-1 shrink-0">
+          {/* Mute Button */}
+          <button
+            onClick={() => setIsMuted(prev => !prev)}
+            className={`p-1.5 rounded-lg border transition-all active:scale-95 cursor-pointer ${
+              isMuted 
+                ? "bg-rose-500/15 border-rose-500/40 text-rose-400 hover:bg-rose-500/25" 
+                : isDarkMode
+                ? "bg-slate-950 border-slate-900 text-slate-400 hover:text-white"
+                : "bg-white border-slate-200 text-slate-650 hover:bg-slate-100"
+            }`}
+            title={isMuted ? "Sesi Aç" : "Sessiz"}
+          >
+            {isMuted ? (
+              <MicOff className="w-3.5 h-3.5 text-rose-400" />
+            ) : (
+              <Mic className="w-3.5 h-3.5 text-cyan-400" />
+            )}
+          </button>
+
+          {/* Maximize Button */}
+          <button
+            onClick={onToggleMinimize}
+            className={`p-1.5 rounded-lg border transition-all active:scale-95 cursor-pointer ${
+              isDarkMode
+                ? "bg-slate-950 border-slate-900 text-slate-400 hover:text-white"
+                : "bg-white border-slate-200 text-slate-650 hover:bg-slate-100"
+            }`}
+            title="Ekranı Büyüt"
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+          </button>
+
+          {/* Disconnect Button */}
+          <button
+            onClick={() => onJoinChannel(null)}
+            className={`p-1.5 rounded-lg border transition-all active:scale-95 cursor-pointer ${
+              isDarkMode 
+                ? "bg-slate-950 border-slate-900 hover:bg-rose-500/15 hover:border-rose-500/40 text-slate-500 hover:text-rose-400" 
+                : "bg-white border-slate-200 hover:bg-rose-500/10 hover:border-rose-500/30 text-slate-650 hover:text-rose-600"
+            }`}
+            title="Ayrıl"
+          >
+            <PhoneOff className="w-3.5 h-3.5 text-rose-500/80" />
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div 
