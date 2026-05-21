@@ -17,8 +17,7 @@ export interface VoiceChannel {
 
 export const PRESET_VOICE_CHANNELS: VoiceChannel[] = [
   { id: "genel-ses", name: "📢 Genel Ses Lobi", count: 0 },
-  { id: "vrising-ses", name: "⚔️ V Rising Akşamı", count: 0 },
-  { id: "ror-ses", name: "💥 Risk of Rain Co-op", count: 0 }
+  { id: "vrising-ses", name: "⚔️ Özel Ses Lobi", count: 0 }
 ];
 
 interface GamerVoiceChatProps {
@@ -29,6 +28,8 @@ interface GamerVoiceChatProps {
   isDarkMode?: boolean;
   isMinimized?: boolean;
   onToggleMinimize?: () => void;
+  isMuted?: boolean;
+  onMuteToggle?: (muted: boolean) => void;
 }
 
 export default function GamerVoiceChat({ 
@@ -38,9 +39,20 @@ export default function GamerVoiceChat({
   onJoinChannel,
   isDarkMode = true,
   isMinimized = false,
-  onToggleMinimize
+  onToggleMinimize,
+  isMuted: propMuted,
+  onMuteToggle
 }: GamerVoiceChatProps) {
-  const [isMuted, setIsMuted] = useState(false);
+  const [internalMuted, setInternalMuted] = useState(false);
+  const isMuted = propMuted !== undefined ? propMuted : internalMuted;
+  const setIsMuted = (value: boolean | ((prev: boolean) => boolean)) => {
+    const next = typeof value === "function" ? value(isMuted) : value;
+    if (onMuteToggle) {
+      onMuteToggle(next);
+    } else {
+      setInternalMuted(next);
+    }
+  };
   const [connectionState, setConnectionState] = useState<"disconnected" | "connecting" | "connected" | "failed">("disconnected");
   const [isDemo, setIsDemo] = useState(false);
   const [canPlayAudio, setCanPlayAudio] = useState(true);

@@ -88,6 +88,16 @@ function parseMarkdown(text: string): React.ReactNode {
   });
 }
 
+function isEmojiOnly(text: string): boolean {
+  const clean = text.trim();
+  if (!clean) return false;
+  const hasLettersOrDigits = /[a-zA-Z0-9ıüşöçğİÜŞÖÇĞ]/.test(clean);
+  if (hasLettersOrDigits) return false;
+  const emojiRegex = /[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g;
+  const matches = clean.match(emojiRegex);
+  return matches !== null && matches.join('').length === clean.replace(/\s/g, '').length;
+}
+
 interface Message {
   id: string;
   channel: string;
@@ -230,88 +240,99 @@ export default function MessageStream({
             </div>
           </div>
         ) : (
-          filteredMessages.map((msg) => {
+          filteredMessages.map((msg, idx) => {
             const isUser = msg.author === (gamerProfile?.username || "Guest_Gamer");
+            const isConsecutive = idx > 0 && filteredMessages[idx - 1].author === msg.author;
             
             return (
               <motion.div
                 key={msg.id}
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                className={`flex gap-3 items-start ${isUser ? "flex-row-reverse" : ""}`}
+                className={`flex gap-3 items-start ${isUser ? "flex-row-reverse" : ""} ${isConsecutive ? "-mt-3.5" : ""}`}
               >
-                {/* Avatar */}
-                <div className={`p-2.5 rounded-xl text-white font-bold bg-gradient-to-br ${msg.avatarBg || "from-slate-700 to-slate-800"} shadow-md relative shrink-0`}>
-                  <Gamepad2 className="w-4 h-4" />
-                  
-                  {/* Status dot */}
-                  <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-slate-950" />
-                </div>
+                {/* Avatar / Spacer */}
+                {isConsecutive ? (
+                  <div className="w-[38px] shrink-0" />
+                ) : (
+                  <div className={`p-2.5 rounded-xl text-white font-bold bg-gradient-to-br ${msg.avatarBg || "from-slate-700 to-slate-800"} shadow-md relative shrink-0`}>
+                    <Gamepad2 className="w-4 h-4" />
+                    
+                    {/* Status dot */}
+                    <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-slate-950" />
+                  </div>
+                )}
 
                 {/* Content block */}
-                <div className={`space-y-1 max-w-[85%] ${isUser ? "text-right items-end" : "text-left items-start"}`}>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className={`text-[11px] font-extrabold hover:text-cyan-400 transition-colors cursor-pointer ${
-                      isDarkMode ? "text-slate-200" : "text-slate-800"
-                    }`}>
-                      {msg.author}
-                    </span>
-                    
-                    {msg.role && (
-                      <span className={`text-[8px] font-black font-mono px-1 py-0.25 rounded tracking-wider ${
-                        msg.role === "ADMIN" 
-                          ? "bg-red-500/10 border border-red-500/30 text-red-400" 
-                          : msg.role === "PRO" 
-                          ? "bg-indigo-500/15 border border-indigo-400/20 text-indigo-300" 
-                          : msg.role === "GUIDE" 
-                          ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"
-                          : msg.role === "BOT"
-                          ? "bg-purple-500/10 border border-purple-500/30 text-purple-400 font-bold"
-                          : "bg-slate-900 border border-slate-800 text-slate-500"
+                <div className={`space-y-1 max-w-[85%] ${isUser ? "text-right items-end flex flex-col" : "text-left items-start flex flex-col"}`}>
+                  {!isConsecutive && (
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={`text-[11px] font-extrabold hover:text-cyan-400 transition-colors cursor-pointer ${
+                        isDarkMode ? "text-slate-200" : "text-slate-800"
                       }`}>
-                        {msg.role}
+                        {msg.author}
                       </span>
-                    )}
+                      
+                      {msg.role && (
+                        <span className={`text-[8px] font-black font-mono px-1 py-0.25 rounded tracking-wider ${
+                          msg.role === "ADMIN" 
+                            ? "bg-red-500/10 border border-red-500/30 text-red-400" 
+                            : msg.role === "PRO" 
+                            ? "bg-indigo-500/15 border border-indigo-400/20 text-indigo-300" 
+                            : msg.role === "GUIDE" 
+                            ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"
+                            : msg.role === "BOT"
+                            ? "bg-purple-500/10 border border-purple-500/30 text-purple-400 font-bold"
+                            : "bg-slate-900 border border-slate-800 text-slate-500"
+                        }`}>
+                          {msg.role}
+                        </span>
+                      )}
 
-                    <span className="text-[9px] text-slate-500 font-mono">
-                      {msg.date}
-                    </span>
+                      <span className="text-[9px] text-slate-500 font-mono">
+                        {msg.date}
+                      </span>
 
-                    {onTogglePin && !isDm && (
-                      <button
-                        type="button"
-                        onClick={() => onTogglePin(msg.id, !!msg.isPinned)}
-                        className={`p-0.5 rounded transition-all cursor-pointer ${
-                          msg.isPinned 
-                            ? "text-cyan-400 hover:text-cyan-300" 
-                            : "text-slate-650 hover:text-slate-400"
-                        }`}
-                        title={msg.isPinned ? "İletiyi Sabitten Kaldır" : "İletiyi Sabitle"}
-                      >
-                        <Pin className={`w-3 h-3 ${msg.isPinned ? "fill-cyan-400/25" : ""}`} />
-                      </button>
-                    )}
-                  </div>
+                      {onTogglePin && !isDm && (
+                        <button
+                          type="button"
+                          onClick={() => onTogglePin(msg.id, !!msg.isPinned)}
+                          className={`p-0.5 rounded transition-all cursor-pointer ${
+                            msg.isPinned 
+                              ? "text-cyan-400 hover:text-cyan-300" 
+                              : "text-slate-650 hover:text-slate-400"
+                          }`}
+                          title={msg.isPinned ? "İletiyi Sabitten Kaldır" : "İletiyi Sabitle"}
+                        >
+                          <Pin className={`w-3 h-3 ${msg.isPinned ? "fill-cyan-400/25" : ""}`} />
+                        </button>
+                      )}
+                    </div>
+                  )}
 
                   {/* Rendering main bubble text */}
-                  <div className={`p-3 rounded-2xl text-xs leading-relaxed font-sans relative ${
-                    msg.isPinned ? "ring-1 ring-cyan-500/50" : ""
-                  } ${
-                    isUser
-                      ? isDarkMode
-                        ? "bg-gradient-to-br from-indigo-900/60 to-slate-900 text-slate-100 rounded-tr-none border border-indigo-800/20"
-                        : "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white rounded-tr-none border border-indigo-400/20 shadow-md"
-                      : msg.isAi
-                      ? isDarkMode
-                        ? "bg-slate-900 border border-purple-500/20 shadow-lg shadow-purple-950/20 rounded-tl-none text-purple-200"
-                        : "bg-purple-50 border border-purple-200 text-purple-950 rounded-tl-none"
-                      : isDarkMode
-                      ? "bg-slate-900/90 text-slate-300 rounded-tl-none border border-slate-800"
-                      : "bg-white text-slate-800 rounded-tl-none border border-slate-200 shadow-sm"
-                  }`}>
-                    
-                    <div className="whitespace-pre-wrap select-text space-y-1">
-                      {parseMarkdown(msg.text)}
+                  <div className="flex items-center gap-2 group w-full">
+                    <div className={`p-3 rounded-2xl text-xs leading-relaxed font-sans relative ${
+                      msg.isPinned ? "ring-1 ring-cyan-500/50" : ""
+                    } ${
+                      isEmojiOnly(msg.text)
+                        ? ""
+                        : isUser
+                        ? isDarkMode
+                          ? "bg-gradient-to-br from-indigo-900/60 to-slate-900 text-slate-100 rounded-tr-none border border-indigo-800/20"
+                          : "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white rounded-tr-none border border-indigo-400/20 shadow-md"
+                        : msg.isAi
+                        ? isDarkMode
+                          ? "bg-slate-900 border border-purple-500/20 shadow-lg shadow-purple-950/20 rounded-tl-none text-purple-200"
+                          : "bg-purple-50 border border-purple-200 text-purple-950 rounded-tl-none"
+                        : isDarkMode
+                        ? "bg-slate-900/90 text-slate-300 rounded-tl-none border border-slate-800"
+                        : "bg-white text-slate-800 rounded-tl-none border border-slate-200 shadow-sm"
+                    } ${isEmojiOnly(msg.text) ? "p-0" : ""}`}>
+                      
+                      <div className={`whitespace-pre-wrap select-text space-y-1 ${isEmojiOnly(msg.text) ? "text-3xl py-1" : ""}`}>
+                        {isEmojiOnly(msg.text) ? msg.text : parseMarkdown(msg.text)}
+                      </div>
                     </div>
 
                     {/* Render inline image url previews */}

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { GAMES_DATA, Game } from "./gamesData";
-import { Review, UserSystemSpecs, GameNightEvent } from "./types";
+import { Review, UserSystemSpecs, GameNightEvent, Message } from "./types";
 import Header from "./components/layout/Header";
 import Footer from "./components/layout/Footer";
 import GameHero from "./components/game/GameHero";
@@ -15,12 +15,12 @@ import LoginModal, { GamerProfile } from "./components/profile/LoginModal";
 import GamerProfileModal from "./components/profile/GamerProfileModal";
 import GamerVoiceChat from "./components/layout/GamerVoiceChat";
 import { 
-  Gamepad2, AlertCircle, RefreshCw, Search, SlidersHorizontal, Minus
+  Gamepad2, AlertCircle, RefreshCw, Search, SlidersHorizontal, Minus, X
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { auth, db, handleFirestoreError, OperationType, cleanUndefined } from "./lib/firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { doc, getDoc, setDoc, deleteDoc, collection, onSnapshot, query, orderBy, serverTimestamp, writeBatch } from "firebase/firestore";
+import { doc, getDoc, setDoc, deleteDoc, collection, onSnapshot, query, orderBy, serverTimestamp, writeBatch, limit } from "firebase/firestore";
 
 // Pre-seeded friends reviews in Turkish for some of the games to make it feel immediately active
 const DEFAULT_REVIEWS: Review[] = [
@@ -296,6 +296,11 @@ export default function App() {
     }
   }, [activeVoiceChannelId]);
   const [onlinePlayers, setOnlinePlayers] = useState<any[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+  const [unreadNotifications, setUnreadNotifications] = useState<Message[]>([]);
+  const [lastSeenMessageId, setLastSeenMessageId] = useState<string | null>(null);
+  const [isVoiceMuted, setIsVoiceMuted] = useState<boolean>(false);
 
   const [games, setGames] = useState<Game[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -434,6 +439,76 @@ export default function App() {
     });
     return () => unsubscribe();
   }, [gamerProfile]);
+
+  // Real-time synchronizer for Lounge Chat Messages
+  useEffect(() => {
+    if (!gamerProfile) {
+      setMessages([]);
+      return;
+    }
+    const q = query(collection(db, "messages"), orderBy("createdAt", "asc"), limit(200));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fetched: Message[] = [];
+      snapshot.forEach((docSnap) => {
+        fetched.push({ id: docSnap.id, ...docSnap.data() } as Message);
+      });
+      setMessages(fetched);
+    }, (error) => {
+      console.error("Firestore message sync failed:", error);
+    });
+
+    return () => unsubscribe();
+  }, [gamerProfile]);
+
+  // Track unread messages & notification count & notifications list
+  useEffect(() => {
+    if (!gamerProfile || messages.length === 0) {
+      if (unreadCount !== 0) setUnreadCount(0);
+      if (unreadNotifications.length !== 0) setUnreadNotifications([]);
+      return;
+    }
+
+    const lastMsg = messages[messages.length - 1];
+
+    if (activeTab === "chat") {
+      if (lastSeenMessageId !== lastMsg.id) {
+        setLastSeenMessageId(lastMsg.id);
+      }
+      if (unreadCount !== 0) {
+        setUnreadCount(0);
+      }
+      if (unreadNotifications.length !== 0) {
+        setUnreadNotifications([]);
+      }
+    } else {
+      if (!lastSeenMessageId) {
+        // Initial load: don't count existing history as unread
+        setLastSeenMessageId(lastMsg.id);
+        if (unreadCount !== 0) setUnreadCount(0);
+      } else {
+        const lastIdx = messages.findIndex((m) => m.id === lastSeenMessageId);
+        if (lastIdx === -1) {
+          setLastSeenMessageId(lastMsg.id);
+          if (unreadCount !== 0) setUnreadCount(0);
+        } else {
+          const newMessages = messages.slice(lastIdx + 1);
+          const unread = newMessages.filter(
+            (m) => m.author !== gamerProfile.username
+          );
+          if (unreadCount !== unread.length) {
+            setUnreadCount(unread.length);
+          }
+          
+          // Sync floating notifications
+          const currentNotifIds = unreadNotifications.map(n => n.id).join(",");
+          const newNotifIds = unread.map(n => n.id).join(",");
+          if (currentNotifIds !== newNotifIds) {
+            setUnreadNotifications(unread);
+          }
+        }
+      }
+    }
+  }, [messages, activeTab, gamerProfile, lastSeenMessageId, unreadCount, unreadNotifications]);
 
   useEffect(() => {
     localStorage.setItem("westportal_specs", JSON.stringify(userSpecs));
@@ -734,6 +809,7 @@ export default function App() {
         onOpenProfile={() => setIsProfileModalOpen(true)}
         isDarkMode={isDarkMode}
         onToggleDarkMode={toggleDarkMode}
+        unreadCount={unreadCount}
       />
 
       <main className="flex-1 pb-16">
@@ -879,6 +955,9 @@ export default function App() {
               activeVoiceChannelId={activeVoiceChannelId}
               onJoinVoiceChannel={setActiveVoiceChannelId}
               onlinePlayersProp={onlinePlayers}
+              messages={messages}
+              isVoiceMuted={isVoiceMuted}
+              onToggleVoiceMute={() => setIsVoiceMuted(!isVoiceMuted)}
             />
             </motion.div>
           ) : (
@@ -997,6 +1076,8 @@ export default function App() {
                 isDarkMode={isDarkMode}
                 isMinimized={isVoiceMinimized}
                 onToggleMinimize={() => setIsVoiceMinimized(!isVoiceMinimized)}
+                isMuted={isVoiceMuted}
+                onMuteToggle={setIsVoiceMuted}
               />
             </div>
           </motion.div>
@@ -1005,6 +1086,66 @@ export default function App() {
 
       {/* Retro/Cyber Punk Styled Turkish Footer */}
       <Footer gamesCount={games.length} />
+
+      {/* Floating Notifications at the Top Center/Right of the Screen */}
+      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">
+        <AnimatePresence>
+          {activeTab !== "chat" && unreadNotifications.map((notif) => (
+            <motion.div
+              key={notif.id}
+              initial={{ opacity: 0, y: -20, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.85, transition: { duration: 0.2 } }}
+              className="pointer-events-auto w-full"
+            >
+              <div 
+                onClick={() => {
+                  setActiveTab("chat");
+                  setUnreadNotifications([]);
+                }}
+                className={`p-3.5 rounded-xl border shadow-xl flex items-start gap-3 cursor-pointer transition-all duration-300 group ${
+                  isDarkMode 
+                    ? "bg-[#090e18]/95 border-cyan-500/30 text-white shadow-cyan-950/20 hover:border-cyan-400" 
+                    : "bg-white border-cyan-400/50 text-slate-800 shadow-sm hover:border-cyan-500"
+                }`}
+              >
+                {/* Avatar Icon */}
+                <div className={`w-8 h-8 rounded-lg text-white font-bold bg-gradient-to-br ${notif.avatarBg || "from-slate-700 to-slate-800"} flex items-center justify-center text-xs shrink-0 uppercase shadow-inner`}>
+                  {notif.author.substring(0, 1)}
+                </div>
+
+                {/* Info */}
+                <div className="flex-1 min-w-0 font-sans">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-cyan-400 group-hover:text-cyan-500 transition-colors">
+                      {notif.author}
+                    </span>
+                    <span className="text-[9px] text-slate-500 font-mono">
+                      {notif.date}
+                    </span>
+                  </div>
+                  <p className={`text-[11px] truncate mt-0.5 ${isDarkMode ? "text-slate-300" : "text-slate-650"}`}>
+                    {notif.text}
+                  </p>
+                </div>
+
+                {/* Close Button */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setUnreadNotifications(prev => prev.filter(n => n.id !== notif.id));
+                  }}
+                  className="p-1 hover:bg-rose-500/10 text-rose-500 rounded-md transition-all shrink-0 cursor-pointer"
+                  title="Kapat"
+                >
+                  <X className="w-3.5 h-3.5" strokeWidth={3} />
+                </button>
+              </div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }

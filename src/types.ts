@@ -30,3 +30,25 @@ export interface GameNightEvent {
   discordChannel?: string; // custom Discord server reference
   comments?: { id: string; author: string; text: string; date: string }[];
 }
+
+export interface Message {
+  id: string;
+  channel: string;
+  author: string;
+  avatarId: string;
+  avatarBg: string;
+  text: string;
+  date: string;
+  isAi?: boolean;
+  role?: "ADMIN" | "PRO" | "GUIDE" | "MEMBER" | "BOT";
+  imageUrl?: string;
+  lfgData?: {
+    gameId: number;
+    gameTitle: string;
+    playersNeeded: number;
+    slotsJoined: string[];
+    maxSlots: number;
+  };
+  isPinned?: boolean;
+}
+

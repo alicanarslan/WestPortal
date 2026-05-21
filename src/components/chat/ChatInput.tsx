@@ -16,7 +16,11 @@ interface ChatInputProps {
   isDarkMode: boolean;
 }
 
-const QUICK_EMOJIS = ["🎮", "🔥", "👑", "🚀", "💀", "😂", "👍", "😮", "🛡️", "👽", "💩", "GG"];
+const QUICK_EMOJIS = [
+  "🎮", "🔥", "👑", "🚀", "💀", "😂", "👍", "😮", "🛡️", "👽", "💩", "⚔️",
+  "🏆", "❤️", "🎯", "⚡", "🎉", "💤", "🍕", "👾", "👀", "💎", "⭐", "🍀",
+  "GG", "AFK", "OP", "XP", "MVP", "LOL", "EZ", "NOOB"
+];
 
 export default function ChatInput({
   textInput,
@@ -163,7 +167,7 @@ export default function ChatInput({
                   initial={{ opacity: 0, y: 10, scale: 0.95 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                  className={`absolute bottom-12 left-0 z-30 p-2.5 rounded-xl shadow-xl border w-[205px] grid grid-cols-4 gap-1.5 ${
+                  className={`absolute bottom-12 left-0 z-30 p-2.5 rounded-xl shadow-xl border w-[280px] grid grid-cols-6 gap-1.5 ${
                     isDarkMode ? "bg-[#05060a] border-slate-800" : "bg-white border-slate-200"
                   }`}
                 >
@@ -175,7 +179,7 @@ export default function ChatInput({
                         setTextInput(textInput + emo);
                         setShowEmojiPicker(false);
                       }}
-                      className={`p-2 rounded-lg text-sm transition-all text-center cursor-pointer ${
+                      className={`p-1 py-1.5 rounded-lg text-xs font-mono font-bold transition-all text-center cursor-pointer ${
                         isDarkMode ? "hover:bg-slate-900 text-slate-205" : "hover:bg-slate-100 text-slate-800"
                       }`}
                     >

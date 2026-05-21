@@ -12,6 +12,7 @@ interface HeaderProps {
   onOpenProfile: () => void;
   isDarkMode?: boolean;
   onToggleDarkMode?: () => void;
+  unreadCount?: number;
 }
 
 export default function Header({
@@ -22,7 +23,8 @@ export default function Header({
   onResetProfile,
   onOpenProfile,
   isDarkMode = true,
-  onToggleDarkMode
+  onToggleDarkMode,
+  unreadCount = 0
 }: HeaderProps) {
 
   return (
@@ -197,8 +199,15 @@ export default function Header({
                 : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
             }`}
           >
-            <MessageSquare className="w-4 h-4 text-pink-500 animate-pulse" />
-            Lobi Sohbet Odası
+            <div className="relative flex items-center justify-center">
+              <MessageSquare className="w-4 h-4 text-pink-500 animate-pulse" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-2.5 -right-2 bg-rose-600 text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center shadow-lg border border-slate-950 animate-bounce">
+                  {unreadCount}
+                </span>
+              )}
+            </div>
+            <span>Lobi Sohbet Odası</span>
             {activeTab === "chat" && (
               <motion.div
                 layoutId="activeTabGlow"
