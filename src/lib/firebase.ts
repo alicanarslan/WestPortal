@@ -55,3 +55,26 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   console.error("Firestore Error: ", JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
 }
+
+export function cleanUndefined<T>(obj: T): T {
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(cleanUndefined) as unknown as T;
+  }
+  if (typeof obj === "object") {
+    const proto = Object.getPrototypeOf(obj);
+    if (proto === null || proto === Object.prototype) {
+      const newObj: any = {};
+      for (const key of Object.keys(obj)) {
+        const val = (obj as any)[key];
+        if (val !== undefined) {
+          newObj[key] = cleanUndefined(val);
+        }
+      }
+      return newObj as T;
+    }
+  }
+  return obj;
+}

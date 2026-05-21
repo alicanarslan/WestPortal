@@ -29,6 +29,7 @@ interface Message {
     slotsJoined: string[];
     maxSlots: number;
   };
+  isPinned?: boolean;
 }
 
 interface GamerChatRoomsProps {
@@ -38,6 +39,9 @@ interface GamerChatRoomsProps {
   activeVoiceChannelId: string | null;
   onJoinVoiceChannel: (channelId: string | null) => void;
   onlinePlayersProp: any[];
+  messages: Message[];
+  isVoiceMuted: boolean;
+  onToggleVoiceMute: () => void;
 }
 
 const AVATAR_STYLING = [
@@ -58,10 +62,12 @@ export default function GamerChatRooms({
   isDarkMode = true, 
   activeVoiceChannelId,
   onJoinVoiceChannel,
-  onlinePlayersProp
+  onlinePlayersProp,
+  messages,
+  isVoiceMuted,
+  onToggleVoiceMute
 }: GamerChatRoomsProps) {
   const [activeChannel, setActiveChannel] = useState<string>("genel-lobi");
-  const [messages, setMessages] = useState<Message[]>([]);
   const onlinePlayers = onlinePlayersProp || [];
   const [sessionDms, setSessionDms] = useState<string[]>([]);
   
@@ -80,31 +86,7 @@ export default function GamerChatRooms({
   const [lfgPlayersNeeded, setLfgPlayersNeeded] = useState<number>(3);
 
 
-  // Firestore subscription for real-time lounge chat messages
-  useEffect(() => {
-    if (!gamerProfile) {
-      setMessages([]);
-      return;
-    }
-    const q = query(collection(db, "messages"), orderBy("createdAt", "asc"), limit(200));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const fetched: Message[] = [];
-      snapshot.forEach((docSnap) => {
-        fetched.push({ id: docSnap.id, ...docSnap.data() } as Message);
-      });
-
-      // Show clean empty chat instead of mock simulated banter
-      if (fetched.length === 0) {
-        setMessages([]);
-      } else {
-        setMessages(fetched);
-      }
-    }, (error) => {
-      console.error("Firestore message sync failed:", error);
-    });
-
-    return () => unsubscribe();
-  }, [gamerProfile]);
+  // Messages are now hoisted and passed as a prop from App.tsx
 
 
   const handleSendMessage = async (textToSend: string) => {
@@ -303,6 +285,17 @@ export default function GamerChatRooms({
     }
   };
 
+  const handleTogglePin = async (msgId: string, currentPinStatus: boolean) => {
+    try {
+      const docRef = doc(db, "messages", msgId);
+      await setDoc(docRef, {
+        isPinned: !currentPinStatus
+      }, { merge: true });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `messages/${msgId}`);
+    }
+  };
+
   const clearChannelHistory = async () => {
     try {
       const dbMessages = messages.filter(m => m.channel === activeChannel);
@@ -362,6 +355,8 @@ export default function GamerChatRooms({
           activeDms={activeDms}
           onlinePlayers={onlinePlayers}
           isDarkMode={isDarkMode}
+          isVoiceMuted={isVoiceMuted}
+          onToggleVoiceMute={onToggleVoiceMute}
         />
 
         <div className="lg:col-span-6 flex flex-col h-[550px] relative">
@@ -373,6 +368,7 @@ export default function GamerChatRooms({
             handleJoinLfgSlot={handleJoinLfgSlot}
             activeDms={activeDms}
             onClearHistory={clearChannelHistory}
+            onTogglePin={handleTogglePin}
           />
 
           <ChatInput

@@ -307,7 +307,7 @@ export default function SteamImportCard({
         setPreviewGame({
           id: Number(appId),
           title: d.name || "",
-          tagline: undefined,
+          tagline: "",
           description: d.description || slicedDesc || "Arkadaşlarınızla oynayabileceğiniz yüksek tempolu Steam tabanlı oyun deneyimi.",
           features: [
             "Resmi Steam Sunucu Altyapısı",
