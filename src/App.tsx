@@ -1,16 +1,18 @@
 import { useState, useEffect } from "react";
 import { GAMES_DATA, Game } from "./gamesData";
 import { Review, UserSystemSpecs, GameNightEvent } from "./types";
-import Header from "./components/Header";
-import GameHero from "./components/GameHero";
-import GameCard from "./components/GameCard";
-import GameDetailsModal from "./components/GameDetailsModal";
-import GamingCompanion from "./components/GamingCompanion";
-import SteamImportCard from "./components/SteamImportCard";
-import GamerChatRooms from "./components/GamerChatRooms";
-import LoginModal, { GamerProfile } from "./components/LoginModal";
+import Header from "./components/layout/Header";
+import GameHero from "./components/game/GameHero";
+import GameCard from "./components/game/GameCard";
+import GameDetailsModal from "./components/game/GameDetailsModal";
+import GamingCompanion from "./components/lobby/GamingCompanion";
+import SteamImportCard from "./components/profile/SteamImportCard";
+import GamerChatRooms from "./components/chat/GamerChatRooms";
+import LoginModal, { GamerProfile } from "./components/profile/LoginModal";
+import GamerProfileModal from "./components/profile/GamerProfileModal";
+import GamerVoiceChat from "./components/layout/GamerVoiceChat";
 import { 
-  Gamepad2, AlertCircle, Settings, RefreshCw
+  Gamepad2, AlertCircle, Settings, RefreshCw, Search, SlidersHorizontal, Filter, X
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { auth, db, handleFirestoreError, OperationType } from "./lib/firebase";
@@ -19,12 +21,73 @@ import { doc, getDoc, setDoc, deleteDoc, collection, onSnapshot, query, orderBy,
 
 // Pre-seeded friends reviews in Turkish for some of the games to make it feel immediately active
 const DEFAULT_REVIEWS: Review[] = [
-
+  {
+    id: "101",
+    gameId: 848450, // Subnautica: Below Zero
+    author: "Can_Undersea",
+    rating: 5,
+    comment: "Kutup biyomu inanılmaz iyi tasarlanmış! Hayatta kalmak için üssünüzü ısıtmalı odalarla donatın yoksa donarak ölürsünüz. Kesinlikle kütüphanenizde olmalı.",
+    recommend: true,
+    date: "12.05.2026, 18:40"
+  },
+  {
+    id: "102",
+    gameId: 1604030, // V Rising
+    author: "Mert_Lord",
+    rating: 5,
+    comment: "Batuhan klan şatosunu yine pembe tüllerle dekore etmiş şaka gibi... Ama onun dışında drakula modunda oynamak çok keyifli, co-op akar!",
+    recommend: true,
+    date: "14.05.2026, 21:15"
+  },
+  {
+    id: "103",
+    gameId: 1604030, // V Rising
+    author: "Batu_Vamp",
+    rating: 4,
+    comment: "Mert_Lord şatonun pembe renklerine laf ediyor ama her gece gelip benim yatağımda uyuyor. PvP'de fena tokatladım bu arada.",
+    recommend: true,
+    date: "14.05.2026, 22:50"
+  },
+  {
+    id: "104",
+    gameId: 632360, // Risk of Rain 2
+    author: "Oğuz_Stacker",
+    rating: 5,
+    comment: "Onlarca eşyayı üst üste bindirdikten sonra ekran patlama efektlerinden görünmüyor ve oyun 10 FPS oluyor. İşte gerçek aksiyon budur!",
+    recommend: true,
+    date: "15.05.2026, 10:30"
+  },
+  {
+    id: "105",
+    gameId: 602960, // Barotrauma
+    author: "Selin_Medic",
+    rating: 4,
+    comment: "Reaktör sızıntısını tamir etmek yerine içimizdeki hain telsizi sabote etti ve hepimizi sular yuttu. Sinir krizi garantili muazzam oyun.",
+    recommend: false,
+    date: "18.05.2026, 16:12"
+  }
 ];
 
 // Pre-seeded multiplayers events schedulers
 const DEFAULT_EVENTS: GameNightEvent[] = [
-
+  {
+    id: "event_1",
+    gameId: 1604030, // V Rising
+    title: "V Rising Klan Kalesi İnşası & PvP Akşamı",
+    organizer: "Mert_Lord",
+    date: "2026-05-22T21:00",
+    maxPlayers: 10,
+    players: ["Mert_Lord", "Batu_Vamp", "Selin_Medic"]
+  },
+  {
+    id: "event_2",
+    gameId: 632360, // Risk of Rain 2
+    title: "Risk of Rain 2 Monsoon Seviyesi Koşu Denemesi",
+    organizer: "Oğuz_Stacker",
+    date: "2026-05-24T20:30",
+    maxPlayers: 4,
+    players: ["Oğuz_Stacker", "Can_Undersea"]
+  }
 ];
 
 // Dynamically extract tags inside the App component instead of defining static array here
@@ -33,39 +96,97 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<"library" | "planner" | "admin" | "chat">("library");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTag, setSelectedTag] = useState("All");
+  const [selectedPlayersFilter, setSelectedPlayersFilter] = useState("All");
+  const [selectedSizeFilter, setSelectedSizeFilter] = useState("All");
+  const [showFilterSection, setShowFilterSection] = useState(false);
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
 
   const [gamerProfile, setGamerProfile] = useState<GamerProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
-  // Sync with auth status
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    const saved = localStorage.getItem("theme");
+    return saved !== "light"; // default to dark mode as requested
+  });
+
+  const toggleDarkMode = () => {
+    setIsDarkMode(prev => {
+      const newVal = !prev;
+      localStorage.setItem("theme", newVal ? "dark" : "light");
+      return newVal;
+    });
+  };
+
+  // Sync with auth status & maintain real-time user profile + online indicators
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    let unsubscribeUserSnap: (() => void) | null = null;
+    
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         try {
           const userRef = doc(db, "users", firebaseUser.uid);
-          const userSnap = await getDoc(userRef);
-          if (userSnap.exists()) {
-            const uData = userSnap.data();
-            setGamerProfile({
-              uid: firebaseUser.uid,
-              username: uData.username || firebaseUser.displayName || "GamerPlayer",
-              avatarId: uData.avatarId || "swords",
-              avatarBg: uData.avatarBg || "from-rose-600 to-red-900"
-            });
-          } else {
-            setGamerProfile(null);
+          
+          // Clear any active subscriber
+          if (unsubscribeUserSnap) {
+            unsubscribeUserSnap();
           }
+
+          // Real-time listen to user metadata (enables seamless tag favoritings / slogan updates)
+          unsubscribeUserSnap = onSnapshot(userRef, (docSnap) => {
+            if (docSnap.exists()) {
+              const uData = docSnap.data();
+              setGamerProfile({
+                uid: firebaseUser.uid,
+                username: uData.username || firebaseUser.displayName || "GamerPlayer",
+                avatarId: uData.avatarId || "swords",
+                avatarBg: uData.avatarBg || "from-rose-600 to-red-900",
+                isOnline: uData.isOnline ?? true,
+                statusMessage: uData.statusMessage || "",
+                favorites: uData.favorites || []
+              });
+            }
+          }, (err) => {
+            console.error("Profil esleme hatasi:", err);
+          });
+
+          // Register online status & record last active timestamp
+          await setDoc(userRef, { 
+            isOnline: true, 
+            lastActive: serverTimestamp() 
+          }, { merge: true });
+
         } catch (err) {
           console.error("Profile fetch error:", err);
           setGamerProfile(null);
         }
       } else {
+        if (unsubscribeUserSnap) {
+          unsubscribeUserSnap();
+          unsubscribeUserSnap = null;
+        }
         setGamerProfile(null);
       }
       setLoadingProfile(false);
     });
-    return () => unsubscribe();
+
+    // Unload visibility and window tab close heartbeat sync
+    const handleUnloadStatus = () => {
+      if (auth.currentUser) {
+        const userRef = doc(db, "users", auth.currentUser.uid);
+        // Fire-and-forget offline tag and voice session reset
+        setDoc(userRef, { isOnline: false, activeVoiceChannel: null, lastActive: serverTimestamp() }, { merge: true });
+      }
+    };
+    window.addEventListener("beforeunload", handleUnloadStatus);
+
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeUserSnap) {
+        unsubscribeUserSnap();
+      }
+      window.removeEventListener("beforeunload", handleUnloadStatus);
+    };
   }, []);
 
   // Automatic migration of pre-existing localStorage games & reviews to Firestore when logged in
@@ -88,6 +209,7 @@ export default function App() {
               if (hasItems) {
                 await batch.commit();
                 console.log("Migrated local games to Firestore:", localGames.length);
+                localStorage.removeItem("westportal_games");
               }
             };
             syncLocal().catch(err => {
@@ -107,7 +229,7 @@ export default function App() {
                 if (r && r.id && r.gameId) {
                   batch.set(doc(db, "reviews", r.id), {
                     ...r,
-                    createdAt: new Date()
+                    createdAt: serverTimestamp()
                   });
                   hasRev = true;
                 }
@@ -115,6 +237,7 @@ export default function App() {
               if (hasRev) {
                 await batch.commit();
                 console.log("Migrated local reviews to Firestore:", localReviews.length);
+                localStorage.removeItem("westportal_reviews");
               }
             };
             syncReviews().catch(err => console.warn("Local reviews migration failed:", err));
@@ -152,6 +275,9 @@ export default function App() {
     });
   };
 
+  const [activeVoiceChannelId, setActiveVoiceChannelId] = useState<string | null>(null);
+  const [onlinePlayers, setOnlinePlayers] = useState<any[]>([]);
+
   const [games, setGames] = useState<Game[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [userSpecs, setUserSpecs] = useState<UserSystemSpecs>(() => {
@@ -184,9 +310,9 @@ export default function App() {
         fetched.push(docSnap.data() as Game);
       });
       
-      // Use local presets as fallback if Firestore catalog is empty, without trying to write to Firestore
+      // Keep library clean when database is empty
       if (fetched.length === 0) {
-        setGames(GAMES_DATA);
+        setGames([]);
       } else {
         setGames(fetched);
       }
@@ -205,9 +331,9 @@ export default function App() {
         fetched.push({ id: docSnap.id, ...docSnap.data() } as Review);
       });
 
-      // Use local reviews as fallback if Firestore is empty, without trying to write to Firestore
+      // Keep reviews clean when database is empty
       if (fetched.length === 0) {
-        setReviews(DEFAULT_REVIEWS);
+        setReviews([]);
       } else {
         setReviews(fetched);
       }
@@ -230,14 +356,62 @@ export default function App() {
         fetched.push({ id: docSnap.id, ...docSnap.data() } as GameNightEvent);
       });
 
-      // Use local events as fallback if Firestore is empty, without trying to write to Firestore
+      // Keep events clean when database is empty
       if (fetched.length === 0) {
-        setPlannerEvents(DEFAULT_EVENTS);
+        setPlannerEvents([]);
       } else {
         setPlannerEvents(fetched);
       }
     }, (error) => {
       console.error("Firestore events sync failed:", error);
+    });
+    return () => unsubscribe();
+  }, [gamerProfile]);
+
+  // Real-time synchronizer for registered portal users (determines online state and active voice channel dynamically)
+  useEffect(() => {
+    if (!gamerProfile) {
+      setOnlinePlayers([]);
+      return;
+    }
+    const q = query(collection(db, "users"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const usersList: any[] = [];
+      snapshot.forEach((docSnap) => {
+        const u = docSnap.data();
+        const isMe = u.uid === gamerProfile.uid;
+        const isOnline = isMe ? true : (u.isOnline ?? false);
+        
+        usersList.push({
+          uid: u.uid || docSnap.id,
+          name: u.username || "GamerPlayer",
+          isOnline: isOnline,
+          state: isMe 
+            ? "Siz buradasınız" 
+            : (isOnline 
+               ? (u.statusMessage ? `💬 ${u.statusMessage}` : "Lobi odasında çevrimiçi")
+               : "Çevrimdışı"),
+          avatar: u.avatarId || "swords",
+          bg: u.avatarBg || "from-rose-600 to-red-900",
+          badge: isMe ? "SİZ" : "OYUNCU",
+          statusMessage: u.statusMessage || "",
+          activeVoiceChannel: u.activeVoiceChannel || null,
+          isMuted: u.isMuted ?? false
+        });
+      });
+
+      // Sort: Me first, then online players, then offline players
+      usersList.sort((a, b) => {
+        if (a.uid === gamerProfile.uid) return -1;
+        if (b.uid === gamerProfile.uid) return 1;
+        if (a.isOnline && !b.isOnline) return -1;
+        if (!a.isOnline && b.isOnline) return 1;
+        return a.name.localeCompare(b.name);
+      });
+
+      setOnlinePlayers(usersList);
+    }, (error) => {
+      console.error("Firestore users list sync failed:", error);
     });
     return () => unsubscribe();
   }, [gamerProfile]);
@@ -305,6 +479,14 @@ export default function App() {
       await deleteDoc(doc(db, "games", String(id)));
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, `games/${id}`);
+    }
+  };
+
+  const handleUpdateGame = async (updatedGame: Game) => {
+    try {
+      await setDoc(doc(db, "games", String(updatedGame.id)), updatedGame);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `games/${updatedGame.id}`);
     }
   };
 
@@ -395,10 +577,32 @@ export default function App() {
 
   const handleSignOut = async () => {
     try {
+      if (auth.currentUser) {
+        const userRef = doc(db, "users", auth.currentUser.uid);
+        await setDoc(userRef, { isOnline: false, activeVoiceChannel: null, lastActive: serverTimestamp() }, { merge: true });
+      }
+      setActiveVoiceChannelId(null);
       await signOut(auth);
       setGamerProfile(null);
     } catch (err) {
       console.error("Logout error:", err);
+    }
+  };
+
+  // Toggle favorite co-op game list for logged in user in Firestore
+  const handleToggleFavorite = async (gameId: number) => {
+    if (!gamerProfile) return;
+    const currentFavorites = gamerProfile.favorites || [];
+    const isFav = currentFavorites.includes(gameId);
+    const updatedFavorites = isFav
+      ? currentFavorites.filter((id) => id !== gameId)
+      : [...currentFavorites, gameId];
+
+    try {
+      const userRef = doc(db, "users", gamerProfile.uid);
+      await setDoc(userRef, { favorites: updatedFavorites }, { merge: true });
+    } catch (err) {
+      console.error("Error toggling favorite game association:", err);
     }
   };
 
@@ -429,19 +633,51 @@ export default function App() {
         "Platformcu"
       ].filter(t => !deactivatedTags.some(d => d.toLowerCase().trim() === t.toLowerCase().trim()));
 
-  // Filter games based on search text AND selected category tag
+  // Filter games based on search text, selected category tag, player count, and size
   const filteredGames = activeTagsGames.filter(game => {
+    // 1. Search filter
     const matchesSearch = game.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           (game.tagline || "").toLowerCase().includes(searchQuery.toLowerCase()) || 
                           (game.description || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
                           game.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()));
     
-    if (selectedTag === "All") return matchesSearch;
-    
-    // Check if any of the game's tags matches the selected tag dynamically ignoring case
-    const matchesTag = game.tags.some(t => t.toLowerCase() === selectedTag.toLowerCase());
+    if (!matchesSearch) return false;
 
-    return matchesSearch && matchesTag;
+    // 2. Tag filter
+    if (selectedTag !== "All") {
+      const matchesTag = game.tags.some(t => t.toLowerCase() === selectedTag.toLowerCase());
+      if (!matchesTag) return false;
+    }
+
+    // 3. Player Filter
+    if (selectedPlayersFilter !== "All") {
+      const playsLower = (game.players || "").toLowerCase();
+      const isSingle = playsLower.includes("tek") || playsLower.includes("single") || playsLower === "1 oyuncu";
+      if (selectedPlayersFilter === "single" && !isSingle) return false;
+      if (selectedPlayersFilter === "multi" && isSingle) return false;
+    }
+
+    // 4. Size Filter
+    if (selectedSizeFilter !== "All") {
+      const parseGBSize = (sizeStr: string): number => {
+        if (!sizeStr) return 0;
+        const match = sizeStr.match(/(\d+(?:\.\d+)?)\s*(?:GB|mb|g|m)/i);
+        if (match) {
+          const val = parseFloat(match[1]);
+          if (sizeStr.toLowerCase().includes("mb")) {
+            return val / 1024;
+          }
+          return val;
+        }
+        return 0;
+      };
+      const parsed = parseGBSize(game.size || "");
+      if (selectedSizeFilter === "small" && parsed >= 10) return false;
+      if (selectedSizeFilter === "medium" && (parsed < 10 || parsed > 45)) return false;
+      if (selectedSizeFilter === "large" && parsed <= 45) return false;
+    }
+
+    return true;
   });
 
   if (loadingProfile) {
@@ -458,7 +694,9 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col font-sans antialiased overflow-x-hidden selection:bg-cyan-500 selection:text-slate-900">
+    <div className={`min-h-screen transition-all duration-300 flex flex-col font-sans antialiased overflow-x-hidden selection:bg-cyan-500 selection:text-slate-900 ${
+      isDarkMode ? "bg-[#07090e] text-slate-100" : "bg-slate-50 text-slate-800"
+    }`}>
       
       {/* Profil oluşturma / Üyelik sistemi Modal katmanı */}
       <AnimatePresence>
@@ -469,16 +707,14 @@ export default function App() {
 
       {/* Dynamic Header Component */}
       <Header
-        searchQuery={searchQuery}
-        setSearchQuery={setSearchQuery}
-        selectedTag={selectedTag}
-        setSelectedTag={setSelectedTag}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        availableTags={availableTags}
         totalGamesCount={games.length}
         gamerProfile={gamerProfile}
         onResetProfile={handleSignOut}
+        onOpenProfile={() => setIsProfileModalOpen(true)}
+        isDarkMode={isDarkMode}
+        onToggleDarkMode={toggleDarkMode}
       />
 
       <main className="flex-1 pb-16">
@@ -535,17 +771,163 @@ export default function App() {
 
                   {/* Main Store Card Grids */}
                   <div className="max-w-7xl mx-auto px-4 md:px-8 space-y-4">
-                    <div className="flex items-center justify-between border-b border-slate-900 pb-3">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-900 pb-3">
                       <div className="flex items-center gap-2">
-                        <Gamepad2 className="w-5 h-5 text-cyan-400" />
-                        <h3 className="text-base font-black uppercase tracking-wider text-white">
-                          {selectedTag === "All" ? "Seçkin Oyun Kütüphanesi" : `${selectedTag} Oyunları`}
+                        <Gamepad2 className="w-5 h-5 text-cyan-400 animate-pulse" />
+                        <h3 className="text-sm md:text-base font-black uppercase tracking-wider text-white">
+                          {selectedTag === "All" && selectedPlayersFilter === "All" && selectedSizeFilter === "All"
+                            ? "Seçkin Oyun Kütüphanesi"
+                            : "Filtrelenmiş Oyunlar"}
                         </h3>
-                        <span className="text-xs font-mono px-2 py-0.5 rounded bg-slate-900 text-slate-400">
+                        <span className="text-[10px] md:text-xs font-mono px-2 py-0.5 rounded bg-slate-900 text-slate-400 border border-slate-800/40">
                           {filteredGames.length} Sonuç
                         </span>
                       </div>
+
+                      {/* Right-aligned Search & Filters Controls */}
+                      <div className="flex items-center gap-2.5 w-full md:w-auto md:justify-end">
+                        <div className="relative flex-1 md:flex-initial md:w-56">
+                          <Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-500" />
+                          <input
+                            type="text"
+                            placeholder="Kütüphanede ara..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="w-full bg-slate-950 pl-9 pr-3 py-2 rounded-xl text-xs text-white placeholder-slate-600 border border-slate-900 focus:outline-none focus:border-cyan-500/80 focus:ring-1 focus:ring-cyan-500/20 transition-all font-sans"
+                          />
+                        </div>
+
+                        <button
+                          onClick={() => setShowFilterSection(!showFilterSection)}
+                          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold font-sans text-xs transition-all cursor-pointer border shrink-0 ${
+                            showFilterSection || selectedTag !== "All" || selectedPlayersFilter !== "All" || selectedSizeFilter !== "All"
+                              ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-400 font-extrabold"
+                              : "bg-slate-950 hover:bg-slate-900 border-slate-900 text-slate-400"
+                          }`}
+                        >
+                          <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" />
+                          <span>Filtrele</span>
+                          {(selectedTag !== "All" || selectedPlayersFilter !== "All" || selectedSizeFilter !== "All") && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                          )}
+                        </button>
+                      </div>
                     </div>
+
+                    {/* Collapsible Rich Filters Drawer */}
+                    <AnimatePresence>
+                      {showFilterSection && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: "auto" }}
+                          exit={{ opacity: 0, height: 0 }}
+                          className="overflow-hidden bg-[#090e18]/80 rounded-2xl border border-slate-900 shadow-2xl"
+                        >
+                          <div className="p-4 md:p-5 space-y-4 font-sans text-xs">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                              {/* 1. Category filter (Filtrele / Kategori) */}
+                              <div className="space-y-2">
+                                <label className="text-[10px] uppercase font-bold text-slate-500 font-mono tracking-wider block">Kategori / Tür:</label>
+                                <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
+                                  <button
+                                    onClick={() => setSelectedTag("All")}
+                                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border ${
+                                      selectedTag === "All"
+                                        ? "bg-cyan-500/20 border-cyan-500/40 text-cyan-300"
+                                        : "bg-slate-950 hover:bg-slate-900 border-slate-900 text-slate-400"
+                                    }`}
+                                  >
+                                    Tümü (All)
+                                  </button>
+                                  {availableTags.map(tag => (
+                                    <button
+                                      key={tag}
+                                      onClick={() => setSelectedTag(tag)}
+                                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border ${
+                                        selectedTag.toLowerCase() === tag.toLowerCase()
+                                          ? "bg-cyan-500/20 border-cyan-500/40 text-cyan-300"
+                                          : "bg-slate-950 hover:bg-slate-900 border-slate-900 text-slate-400"
+                                      }`}
+                                    >
+                                      {tag}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* 2. Player count Filter */}
+                              <div className="space-y-2">
+                                <label className="text-[10px] uppercase font-bold text-slate-500 font-mono tracking-wider block">Oyuncu Sayısı:</label>
+                                <div className="grid grid-cols-3 gap-1.5">
+                                  {[
+                                    { value: "All", label: "Tümü" },
+                                    { value: "single", label: "Tek Oyuncu" },
+                                    { value: "multi", label: "Multi / Co-op" }
+                                  ].map(opt => (
+                                    <button
+                                      key={opt.value}
+                                      onClick={() => setSelectedPlayersFilter(opt.value)}
+                                      className={`py-1.5 px-2 rounded-lg text-[10px] font-bold text-center transition-all cursor-pointer border ${
+                                        selectedPlayersFilter === opt.value
+                                          ? "bg-cyan-500/20 border-cyan-500/40 text-cyan-300"
+                                          : "bg-slate-950 hover:bg-slate-900 border-slate-900 text-slate-400"
+                                      }`}
+                                    >
+                                      {opt.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* 3. Game size Filter */}
+                              <div className="space-y-2">
+                                <label className="text-[10px] uppercase font-bold text-slate-500 font-mono tracking-wider block">Depolama Boyutu:</label>
+                                <div className="grid grid-cols-4 gap-1.5">
+                                  {[
+                                    { value: "All", label: "Tümü" },
+                                    { value: "small", label: "< 10 GB" },
+                                    { value: "medium", label: "10-45 GB" },
+                                    { value: "large", label: "> 45 GB" }
+                                  ].map(opt => (
+                                    <button
+                                      key={opt.value}
+                                      onClick={() => setSelectedSizeFilter(opt.value)}
+                                      className={`py-1.5 px-2 rounded-lg text-[10px] font-bold text-center transition-all cursor-pointer border ${
+                                        selectedSizeFilter === opt.value
+                                          ? "bg-cyan-500/20 border-cyan-500/40 text-cyan-300"
+                                          : "bg-slate-950 hover:bg-slate-900 border-slate-900 text-slate-400"
+                                      }`}
+                                    >
+                                      {opt.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Reset filters row */}
+                            <div className="flex items-center justify-between pt-1 border-t border-slate-900/60">
+                              <span className="text-[10px] text-slate-500 italic">
+                                Seçenekleri işaretleyerek filtreleme kriterlerini daraltabilirsiniz.
+                              </span>
+                              {(selectedTag !== "All" || selectedPlayersFilter !== "All" || selectedSizeFilter !== "All" || searchQuery) && (
+                                <button
+                                  onClick={() => {
+                                    setSelectedTag("All");
+                                    setSelectedPlayersFilter("All");
+                                    setSelectedSizeFilter("All");
+                                    setSearchQuery("");
+                                  }}
+                                  className="text-[10px] text-rose-400 hover:underline flex items-center gap-1 cursor-pointer font-bold"
+                                >
+                                  Temizle & Sıfırla
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
 
                     {filteredGames.length === 0 ? (
                       <div className="text-center py-20 bg-slate-950/40 rounded-2xl border border-slate-900">
@@ -561,6 +943,9 @@ export default function App() {
                             game={game}
                             onSelectGame={(g) => setSelectedGame(g)}
                             reviewCount={reviews.filter(r => r.gameId === game.id).length}
+                            isFavorite={gamerProfile ? (gamerProfile.favorites || []).includes(game.id) : false}
+                            onToggleFavorite={handleToggleFavorite}
+                            isLoggedIn={!!gamerProfile}
                           />
                         ))}
                       </div>
@@ -586,6 +971,7 @@ export default function App() {
                 onDeleteGame={handleDeleteGame}
                 deactivatedTags={deactivatedTags}
                 onToggleDeactivateTag={handleToggleDeactivateTag}
+                onUpdateGame={handleUpdateGame}
               />
             </motion.div>
           ) : activeTab === "chat" ? (
@@ -597,10 +983,14 @@ export default function App() {
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.3 }}
             >
-              <GamerChatRooms
-                gamerProfile={gamerProfile}
-                games={activeTagsGames}
-              />
+            <GamerChatRooms
+              gamerProfile={gamerProfile}
+              games={activeTagsGames}
+              isDarkMode={isDarkMode}
+              activeVoiceChannelId={activeVoiceChannelId}
+              onJoinVoiceChannel={setActiveVoiceChannelId}
+              onlinePlayersProp={onlinePlayers}
+            />
             </motion.div>
           ) : (
             /* Sub systems or Planner tabs */
@@ -620,6 +1010,7 @@ export default function App() {
                 onDeleteEvent={handleDeleteEvent}
                 gamerProfile={gamerProfile}
                 onAddComment={handleAddComment}
+                isDarkMode={isDarkMode}
                 onSelectGame={(game) => {
                   setSelectedGame(game);
                   setActiveTab("library"); // switch back cleanly
@@ -640,6 +1031,65 @@ export default function App() {
             onAddReview={handleAddReview}
             userSpecs={userSpecs}
           />
+        )}
+      </AnimatePresence>
+
+      {/* Dynamic Gamer Profile Station Modal */}
+      <AnimatePresence>
+        {isProfileModalOpen && (
+          <GamerProfileModal
+            gamerProfile={gamerProfile}
+            isOpen={isProfileModalOpen}
+            onClose={() => setIsProfileModalOpen(false)}
+            onSignOut={() => {
+              setIsProfileModalOpen(false);
+              handleSignOut();
+            }}
+            games={games}
+            reviews={reviews}
+            plannerEvents={plannerEvents}
+            onToggleFavorite={handleToggleFavorite}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Global persistent floating active voice card across all screens */}
+      <AnimatePresence>
+        {activeVoiceChannelId && (
+          <motion.div
+            initial={{ opacity: 0, y: 30, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 30, scale: 0.95 }}
+            className="fixed bottom-6 right-6 z-50 max-w-sm w-full md:w-[340px]"
+          >
+            <div className={`p-4 rounded-2xl shadow-2xl border transition-all duration-300 ${
+              isDarkMode 
+                ? "bg-[#090e18]/95 backdrop-blur-xl border-slate-800/80 shadow-cyan-950/20 text-white" 
+                : "bg-white/95 backdrop-blur-xl border-slate-200 shadow-xl text-slate-800"
+            }`}>
+              <div className={`flex items-center justify-between border-b pb-2 mb-3 ${
+                isDarkMode ? "border-slate-800" : "border-slate-100"
+              }`}>
+                <span className="text-[10px] font-black uppercase tracking-widest font-mono text-cyan-500 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                  AKTİF SES BAĞLANTISI
+                </span>
+                <span className={`text-[9.5px] px-1.5 py-0.5 rounded font-mono font-bold uppercase tracking-wider ${
+                  isDarkMode ? "bg-slate-900 text-slate-400" : "bg-slate-100 text-slate-600"
+                }`}>
+                  CANLI
+                </span>
+              </div>
+              
+              <GamerVoiceChat 
+                gamerProfile={gamerProfile}
+                onlinePlayers={onlinePlayers}
+                activeVoiceChannelId={activeVoiceChannelId}
+                onJoinChannel={setActiveVoiceChannelId}
+                isDarkMode={isDarkMode}
+              />
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
 

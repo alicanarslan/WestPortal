@@ -1,4 +1,4 @@
-import { Game } from "./gamesData";
+export type { Game } from "./gamesData";
 
 export interface Review {
   id: string;
