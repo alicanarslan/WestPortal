@@ -98,8 +98,8 @@ service cloud.firestore {
     // GAMES store data
     match /games/{gameId} {
       allow read: if true; // public catalog
-      allow create, update: if isAdmin() && isValidGameDoc(incoming());
-      allow delete: if isAdmin();
+      allow create, update: if isSignedIn() && isValidGameDoc(incoming());
+      allow delete: if isSignedIn();
     }
 
     // REVIEWS for games

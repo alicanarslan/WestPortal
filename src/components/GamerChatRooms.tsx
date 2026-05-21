@@ -130,6 +130,7 @@ const QUICK_SAYINGS = [
 export default function GamerChatRooms({ gamerProfile, games }: GamerChatRoomsProps) {
   const [activeChannel, setActiveChannel] = useState<string>("genel-lobi");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [onlinePlayers, setOnlinePlayers] = useState<any[]>([]);
   
   const [textInput, setTextInput] = useState("");
   const [chatTheme, setChatTheme] = useState<"neon" | "cosmic" | "terminal">("neon");
@@ -143,26 +144,20 @@ export default function GamerChatRooms({ gamerProfile, games }: GamerChatRoomsPr
 
   // Firestore subscription for real-time lounge chat messages
   useEffect(() => {
+    if (!gamerProfile) {
+      setMessages([]);
+      return;
+    }
     const q = query(collection(db, "messages"), orderBy("createdAt", "asc"), limit(200));
-    const unsubscribe = onSnapshot(q, async (snapshot) => {
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const fetched: Message[] = [];
       snapshot.forEach((docSnap) => {
         fetched.push({ id: docSnap.id, ...docSnap.data() } as Message);
       });
 
-      // Seed chat if collection is entirely fresh/empty
+      // Show clean empty chat instead of mock simulated banter
       if (fetched.length === 0) {
-        try {
-          const batch = writeBatch(db);
-          for (const msg of PRE_SEEDED_BANTER) {
-            const docRef = doc(db, "messages", msg.id);
-            // Replace serverTimestamp
-            batch.set(docRef, { ...msg, createdAt: new Date() });
-          }
-          await batch.commit();
-        } catch (err) {
-          console.warn("Seeding chat failed (likely rules or concurrent):", err);
-        }
+        setMessages([]);
       } else {
         setMessages(fetched);
       }
@@ -171,7 +166,33 @@ export default function GamerChatRooms({ gamerProfile, games }: GamerChatRoomsPr
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [gamerProfile]);
+
+  // Real-time synchronizer for registered players/users on the portal
+  useEffect(() => {
+    if (!gamerProfile) {
+      setOnlinePlayers([]);
+      return;
+    }
+    const q = query(collection(db, "users"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const usersList: any[] = [];
+      snapshot.forEach((docSnap) => {
+        const u = docSnap.data();
+        usersList.push({
+          name: u.username || "GamerPlayer",
+          state: u.uid === gamerProfile.uid ? "Siz buradasınız" : "Lobi odasında çevrimiçi",
+          avatar: u.avatarId || "swords",
+          bg: u.avatarBg || "from-rose-600 to-red-900",
+          badge: u.uid === gamerProfile.uid ? "SİZ" : "OYUNCU"
+        });
+      });
+      setOnlinePlayers(usersList);
+    }, (error) => {
+      console.error("Firestore users list sync failed:", error);
+    });
+    return () => unsubscribe();
+  }, [gamerProfile]);
 
   useEffect(() => {
     scrollToBottom();
@@ -299,15 +320,6 @@ export default function GamerChatRooms({ gamerProfile, games }: GamerChatRoomsPr
       console.error("Grup mesaj silme başarısız:", err);
     }
   };
-
-  // Simulated active gamers side widget
-  const ONLINE_PLAYERS = [
-    { name: "Mert_Lord", state: "V Rising Oynuyor", avatar: "ninja", bg: "from-rose-500 to-red-600", badge: "PRO" },
-    { name: "Batu_Vamp", state: "Risk of Rain 2'de Can Çekişiyor", avatar: "mage", bg: "from-purple-600 to-violet-700", badge: "MEMBER" },
-    { name: "Selin_Medic", state: "Barotrauma Reaktörünü Sabote Ediyor", avatar: "hacker", bg: "from-emerald-500 to-teal-600", badge: "GUIDE" },
-    { name: "Can_Undersea", state: "Loli Lobi Odasında Bekliyor", avatar: "hero", bg: "from-cyan-500 to-blue-500", badge: "GUIDE" },
-    { name: "Oğuz_Stacker", state: "Steam'den Oyun Kuruyor", avatar: "mech", bg: "from-amber-500 to-orange-600", badge: "PRO" }
-  ];
 
   return (
     <div className="max-w-7xl mx-auto px-4 md:px-8 py-4 space-y-6">
@@ -655,19 +667,19 @@ export default function GamerChatRooms({ gamerProfile, games }: GamerChatRoomsPr
           <div className="space-y-4">
             <div className="flex items-center justify-between border-b border-slate-900 pb-2">
               <span className="text-[10px] uppercase font-black text-slate-500 font-mono tracking-widest block font-bold">
-                AKTİF LOBİ (%{86} ÇEVRİMİÇİ)
+                AKTİF LOBİ (%{100})
               </span>
               <span className="text-[9px] font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.2s rounded">
-                {ONLINE_PLAYERS.length} ÇEVRİMİÇİ
+                {onlinePlayers.length} ÇEVRİMİÇİ
               </span>
             </div>
 
             <div className="space-y-3">
-              {ONLINE_PLAYERS.map((pla, idx) => (
+              {onlinePlayers.map((pla, idx) => (
                 <button
                   key={idx}
                   onClick={() => {
-                    // Instantly trigger DM whisper simulation / pre-seed text query in chat
+                    // Instantly trigger DM whisper in chat input
                     setTextInput(`@${pla.name} `);
                   }}
                   className="w-full text-left p-2 rounded-xl bg-slate-900/35 hover:bg-slate-900/90 transition-all border border-slate-900/40 flex items-center justify-between group cursor-pointer"

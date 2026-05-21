@@ -129,6 +129,64 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // Automatic migration of pre-existing localStorage games & reviews to Firestore when logged in
+  useEffect(() => {
+    if (gamerProfile) {
+      try {
+        const localSaved = localStorage.getItem("westportal_games");
+        if (localSaved) {
+          const localGames: Game[] = JSON.parse(localSaved);
+          if (Array.isArray(localGames) && localGames.length > 0) {
+            const syncLocal = async () => {
+              const batch = writeBatch(db);
+              let hasItems = false;
+              for (const g of localGames) {
+                if (g && g.id && g.title) {
+                  batch.set(doc(db, "games", String(g.id)), g);
+                  hasItems = true;
+                }
+              }
+              if (hasItems) {
+                await batch.commit();
+                console.log("Migrated local games to Firestore:", localGames.length);
+              }
+            };
+            syncLocal().catch(err => {
+              console.warn("Local games migration failed:", err);
+            });
+          }
+        }
+
+        const localReviewsSaved = localStorage.getItem("westportal_reviews");
+        if (localReviewsSaved) {
+          const localReviews: Review[] = JSON.parse(localReviewsSaved);
+          if (Array.isArray(localReviews) && localReviews.length > 0) {
+            const syncReviews = async () => {
+              const batch = writeBatch(db);
+              let hasRev = false;
+              for (const r of localReviews) {
+                if (r && r.id && r.gameId) {
+                  batch.set(doc(db, "reviews", r.id), {
+                    ...r,
+                    createdAt: new Date()
+                  });
+                  hasRev = true;
+                }
+              }
+              if (hasRev) {
+                await batch.commit();
+                console.log("Migrated local reviews to Firestore:", localReviews.length);
+              }
+            };
+            syncReviews().catch(err => console.warn("Local reviews migration failed:", err));
+          }
+        }
+      } catch (e) {
+        console.error("Local storage migration error:", e);
+      }
+    }
+  }, [gamerProfile]);
+
   // Load global deactivated/forbidden tags
   const [deactivatedTags, setDeactivatedTags] = useState<string[]>(() => {
     try {
@@ -181,24 +239,15 @@ export default function App() {
   // 1. Real-time synchronizer for catalog Games
   useEffect(() => {
     const q = query(collection(db, "games"));
-    const unsubscribe = onSnapshot(q, async (snapshot) => {
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const fetched: Game[] = [];
       snapshot.forEach((docSnap) => {
         fetched.push(docSnap.data() as Game);
       });
       
-      // Auto-populate default mock catalog if Firestore is empty
+      // Use local presets as fallback if Firestore catalog is empty, without trying to write to Firestore
       if (fetched.length === 0) {
-        try {
-          const batch = writeBatch(db);
-          for (const g of GAMES_DATA) {
-            batch.set(doc(db, "games", String(g.id)), g);
-          }
-          await batch.commit();
-        } catch (err) {
-          console.warn("Seeding default games failed:", err);
-          setGames(GAMES_DATA);
-        }
+        setGames(GAMES_DATA);
       } else {
         setGames(fetched);
       }
@@ -211,23 +260,15 @@ export default function App() {
   // 2. Real-time synchronizer for Reviews
   useEffect(() => {
     const q = query(collection(db, "reviews"), orderBy("createdAt", "desc"));
-    const unsubscribe = onSnapshot(q, async (snapshot) => {
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const fetched: Review[] = [];
       snapshot.forEach((docSnap) => {
         fetched.push({ id: docSnap.id, ...docSnap.data() } as Review);
       });
 
+      // Use local reviews as fallback if Firestore is empty, without trying to write to Firestore
       if (fetched.length === 0) {
-        try {
-          const batch = writeBatch(db);
-          for (const r of DEFAULT_REVIEWS) {
-            batch.set(doc(db, "reviews", r.id), { ...r, createdAt: new Date() });
-          }
-          await batch.commit();
-        } catch (err) {
-          console.warn("Seeding reviews failed:", err);
-          setReviews(DEFAULT_REVIEWS);
-        }
+        setReviews(DEFAULT_REVIEWS);
       } else {
         setReviews(fetched);
       }
@@ -239,24 +280,20 @@ export default function App() {
 
   // 3. Real-time synchronizer for Planned Events
   useEffect(() => {
+    if (!gamerProfile) {
+      setPlannerEvents([]);
+      return;
+    }
     const q = query(collection(db, "events"), orderBy("date", "asc"));
-    const unsubscribe = onSnapshot(q, async (snapshot) => {
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const fetched: GameNightEvent[] = [];
       snapshot.forEach((docSnap) => {
         fetched.push({ id: docSnap.id, ...docSnap.data() } as GameNightEvent);
       });
 
+      // Use local events as fallback if Firestore is empty, without trying to write to Firestore
       if (fetched.length === 0) {
-        try {
-          const batch = writeBatch(db);
-          for (const ev of DEFAULT_EVENTS) {
-            batch.set(doc(db, "events", ev.id), { ...ev, createdAt: new Date() });
-          }
-          await batch.commit();
-        } catch (err) {
-          console.warn("Seeding events failed:", err);
-          setPlannerEvents(DEFAULT_EVENTS);
-        }
+        setPlannerEvents(DEFAULT_EVENTS);
       } else {
         setPlannerEvents(fetched);
       }
@@ -264,7 +301,7 @@ export default function App() {
       console.error("Firestore events sync failed:", error);
     });
     return () => unsubscribe();
-  }, []);
+  }, [gamerProfile]);
 
   useEffect(() => {
     localStorage.setItem("westportal_specs", JSON.stringify(userSpecs));
