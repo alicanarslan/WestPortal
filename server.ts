@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
-import { GoogleGenAI, Type } from "@google/genai";
+
 
 dotenv.config();
 
@@ -127,17 +127,7 @@ async function startServer() {
 
   app.use(express.json());
 
-  // Initialize server-side Gemini client
-  const aiClient = process.env.GEMINI_API_KEY
-    ? new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY,
-        httpOptions: {
-          headers: {
-            "User-Agent": "aistudio-build",
-          },
-        },
-      })
-    : null;
+
 
   // API Route to proxy Steam AppDetails and enrich data via Gemini
   app.get("/api/steam-proxy", async (req, res) => {
@@ -276,6 +266,30 @@ async function startServer() {
       });
     } catch (error: any) {
       console.error("[SteamProxy] Error:", error);
+      return res.status(500).json({ error: error.message || "Internal server error" });
+    }
+  });
+
+  // API Route to proxy Steam store search autocomplete
+  app.get("/api/steam-search", async (req, res) => {
+    const { term } = req.query;
+    if (!term || typeof term !== "string") {
+      return res.status(400).json({ error: "Missing term parameter" });
+    }
+
+    try {
+      console.log(`[SteamSearch] Searching for term: ${term}`);
+      const steamResponse = await fetch(`https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(term)}&l=turkish&cc=TR`);
+      if (!steamResponse.ok) {
+        return res.status(steamResponse.status).json({ error: `Steam API returned status ${steamResponse.status}` });
+      }
+      const json = await steamResponse.json();
+      return res.json({
+        success: true,
+        items: json.items || []
+      });
+    } catch (error: any) {
+      console.error("[SteamSearch] Error:", error);
       return res.status(500).json({ error: error.message || "Internal server error" });
     }
   });

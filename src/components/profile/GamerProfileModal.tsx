@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { db, handleFirestoreError, OperationType } from "../../lib/firebase";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { GamerProfile, AVATAR_PRESETS } from "./LoginModal";
-import { Game, Review, GameNightEvent } from "../../types";
+import { Game, Review, GameNightEvent, UserSystemSpecs } from "../../types";
 
 interface GamerProfileModalProps {
   gamerProfile: GamerProfile | null;
@@ -18,6 +18,8 @@ interface GamerProfileModalProps {
   reviews: Review[];
   plannerEvents: GameNightEvent[];
   onToggleFavorite: (gameId: number) => void;
+  userSpecs: UserSystemSpecs;
+  onUpdateSpecs: (specs: UserSystemSpecs) => void;
 }
 
 export default function GamerProfileModal({
@@ -28,11 +30,18 @@ export default function GamerProfileModal({
   games,
   reviews,
   plannerEvents,
-  onToggleFavorite
+  onToggleFavorite,
+  userSpecs,
+  onUpdateSpecs
 }: GamerProfileModalProps) {
   const [username, setUsername] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
   const [selectedAvatar, setSelectedAvatar] = useState<"swords" | "shield" | "crown" | "flame">("swords");
+
+  const [cpuRank, setCpuRank] = useState<number>(2);
+  const [gpuRank, setGpuRank] = useState<number>(2);
+  const [ramGB, setRamGB] = useState<number>(16);
+  const [storageSSD, setStorageSSD] = useState<boolean>(true);
   
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -45,7 +54,13 @@ export default function GamerProfileModal({
       setStatusMessage(gamerProfile.statusMessage || "");
       setSelectedAvatar(gamerProfile.avatarId || "swords");
     }
-  }, [gamerProfile, isOpen]);
+    if (userSpecs) {
+      setCpuRank(userSpecs.cpuRank ?? 2);
+      setGpuRank(userSpecs.gpuRank ?? 2);
+      setRamGB(userSpecs.ramGB ?? 16);
+      setStorageSSD(userSpecs.storageSSD ?? true);
+    }
+  }, [gamerProfile, userSpecs, isOpen]);
 
   if (!isOpen || !gamerProfile) return null;
 
@@ -137,15 +152,19 @@ export default function GamerProfileModal({
       const userRef = doc(db, "users", gamerProfile.uid);
       const selectedBg = AVATAR_PRESETS.find(p => p.id === selectedAvatar)?.bg || "from-rose-600 to-red-900";
       
+      const newSpecs = { cpuRank, gpuRank, ramGB, storageSSD };
+
       await setDoc(userRef, {
         uid: gamerProfile.uid,
         username: trimmedUser,
         statusMessage: statusMessage.trim(),
         avatarId: selectedAvatar,
         avatarBg: selectedBg,
+        specs: newSpecs,
         lastActive: serverTimestamp()
       }, { merge: true });
 
+      onUpdateSpecs(newSpecs);
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
     } catch (err: any) {
@@ -333,6 +352,77 @@ export default function GamerProfileModal({
                   placeholder="örn: Şuan V Rising oynamaya hazır, Monsoon delisi..."
                   className="w-full bg-slate-950 text-xs text-slate-300 placeholder-slate-700 p-2.5 rounded-lg border border-slate-800 focus:outline-none focus:border-cyan-500"
                 />
+              </div>
+
+              {/* System Specs Configuration */}
+              <div className="border-t border-slate-900/60 pt-4 space-y-3">
+                <span className="text-[10px] uppercase font-mono font-black text-cyan-400 block tracking-widest">
+                  🖥️ SİSTEM DONANIM UYUMLULUK AYARLARI
+                </span>
+                
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {/* CPU Rank */}
+                  <div className="space-y-1">
+                    <label className="text-3xs font-mono text-slate-400 block tracking-wider uppercase">İŞLEMCİ (CPU)</label>
+                    <select
+                      value={cpuRank}
+                      onChange={(e) => setCpuRank(Number(e.target.value))}
+                      className="w-full bg-slate-950 text-xs text-slate-300 p-2.5 rounded-lg border border-slate-800 focus:outline-none focus:border-cyan-500 font-mono"
+                    >
+                      <option value={1}>Giriş Seviye</option>
+                      <option value={2}>Orta Seviye</option>
+                      <option value={3}>Üst Seviye</option>
+                    </select>
+                  </div>
+
+                  {/* GPU Rank */}
+                  <div className="space-y-1">
+                    <label className="text-3xs font-mono text-slate-400 block tracking-wider uppercase">EKRAN KARTI (GPU)</label>
+                    <select
+                      value={gpuRank}
+                      onChange={(e) => setGpuRank(Number(e.target.value))}
+                      className="w-full bg-slate-950 text-xs text-slate-300 p-2.5 rounded-lg border border-slate-800 focus:outline-none focus:border-cyan-500 font-mono"
+                    >
+                      <option value={1}>Giriş Seviye</option>
+                      <option value={2}>Orta Seviye</option>
+                      <option value={3}>Üst Seviye</option>
+                    </select>
+                  </div>
+
+                  {/* RAM Size */}
+                  <div className="space-y-1">
+                    <label className="text-3xs font-mono text-slate-400 block tracking-wider uppercase">BELLEK (RAM)</label>
+                    <select
+                      value={ramGB}
+                      onChange={(e) => setRamGB(Number(e.target.value))}
+                      className="w-full bg-slate-950 text-xs text-slate-300 p-2.5 rounded-lg border border-slate-800 focus:outline-none focus:border-cyan-500 font-mono"
+                    >
+                      <option value={4}>4 GB</option>
+                      <option value={8}>8 GB</option>
+                      <option value={12}>12 GB</option>
+                      <option value={16}>16 GB</option>
+                      <option value={24}>24 GB</option>
+                      <option value={32}>32 GB</option>
+                      <option value={64}>64 GB</option>
+                    </select>
+                  </div>
+
+                  {/* Drive Type */}
+                  <div className="space-y-1">
+                    <label className="text-3xs font-mono text-slate-400 block tracking-wider uppercase">DEPOLAMA TÜRÜ</label>
+                    <select
+                      value={storageSSD ? "ssd" : "hdd"}
+                      onChange={(e) => setStorageSSD(e.target.value === "ssd")}
+                      className="w-full bg-slate-950 text-xs text-slate-300 p-2.5 rounded-lg border border-slate-800 focus:outline-none focus:border-cyan-500 font-mono"
+                    >
+                      <option value="ssd">SSD Sürücü</option>
+                      <option value="hdd">HDD Sabit Disk</option>
+                    </select>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-500 font-sans leading-normal">
+                  * Bu bilgiler, oyun detay sayfasındaki sistem gereksinimi karşılaştırma aracında otomatik olarak kullanılacaktır.
+                </p>
               </div>
 
               {/* Error & Success Feedback displays */}

@@ -8,29 +8,104 @@ interface GameDetailsSpecsProps {
   userSpecs: UserSystemSpecs;
 }
 
+function classifyCpu(cpuStr: string): number {
+  const s = (cpuStr || "").toLowerCase();
+  if (s.includes("i9") || s.includes("ryzen 9") || s.includes("ryzen 7") || s.includes("threadripper")) {
+    return 3;
+  }
+  if (s.includes("i7")) {
+    const match = s.match(/i7-(\d{3,4})/);
+    if (match) {
+      const genNum = parseInt(match[1]);
+      if (genNum < 6000) return 2;
+    }
+    return 3;
+  }
+  if (s.includes("i5") || s.includes("ryzen 5") || s.includes("ryzen 3")) {
+    return 2;
+  }
+  if (s.includes("i3") || s.includes("fx-") || s.includes("pentium") || s.includes("celeron") || s.includes("athlon")) {
+    return 1;
+  }
+  return 2;
+}
+
+function classifyGpu(gpuStr: string): number {
+  const s = (gpuStr || "").toLowerCase();
+  if (s.includes("rtx") || s.includes("xt") || s.includes("vega 56") || s.includes("vega 64") || s.includes("gtx 1080") || s.includes("gtx 1080ti") || s.includes("titan")) {
+    return 3;
+  }
+  const rxMatch = s.match(/rx\s*(\d{3,4})/);
+  if (rxMatch) {
+    const rxModel = parseInt(rxMatch[1]);
+    if (rxModel >= 5500 || rxModel >= 6600) return 3;
+    if (rxModel >= 470 && rxModel <= 590) return 2;
+    return 1;
+  }
+  const gtxMatch = s.match(/gtx\s*(\d{3,4})/);
+  if (gtxMatch) {
+    const gtxModel = parseInt(gtxMatch[1]);
+    if (gtxModel >= 1080) return 3;
+    if (gtxModel >= 970 || gtxModel === 1060 || gtxModel === 1070 || gtxModel >= 1650) return 2;
+    return 1;
+  }
+  if (s.includes("intel hd") || s.includes("intel iris") || s.includes("amd radeon r") || s.includes("gt ") || s.includes("gtx 750") || s.includes("gtx 660")) {
+    return 1;
+  }
+  return 2;
+}
+
+function parseRamGB(ramStr: string): number {
+  const match = (ramStr || "").match(/(\d+)\s*(?:gb|mb)/i);
+  if (match) {
+    let val = parseInt(match[1]);
+    if ((ramStr || "").toLowerCase().includes("mb")) {
+      val = Math.ceil(val / 1024);
+    }
+    return val;
+  }
+  return 8;
+}
+
 export default function GameDetailsSpecs({ game, userSpecs }: GameDetailsSpecsProps) {
   const compareCpu = () => {
-    if (userSpecs.cpuRank >= 2) return { text: "Yüksek Performans", level: "green" };
-    if (userSpecs.cpuRank >= 1) return { text: "Uyumlu (Sınırda)", level: "amber" };
-    return { text: "Yetersiz kalabilir", level: "red" };
+    const minCpuRank = classifyCpu(game.sysMin.cpu);
+    const recCpuRank = classifyCpu(game.sysRec.cpu);
+    const userRank = userSpecs.cpuRank || 2;
+
+    if (userRank >= recCpuRank) return { text: "Yüksek Performans (Önerilen)", level: "green" };
+    if (userRank >= minCpuRank) return { text: "Minimum Uyumlu (Sınırda)", level: "amber" };
+    return { text: "Yetersiz Kalabilir", level: "red" };
   };
 
   const compareGpu = () => {
-    if (userSpecs.gpuRank >= 2) return { text: "Yüksek Akıcılık", level: "green" };
-    if (userSpecs.gpuRank >= 1) return { text: "Uyumlu (Sınırda)", level: "amber" };
-    return { text: "Yetersiz kalabilir", level: "red" };
+    const minGpuRank = classifyGpu(game.sysMin.gpu);
+    const recGpuRank = classifyGpu(game.sysRec.gpu);
+    const userRank = userSpecs.gpuRank || 2;
+
+    if (userRank >= recGpuRank) return { text: "Yüksek Performans (Önerilen)", level: "green" };
+    if (userRank >= minGpuRank) return { text: "Minimum Uyumlu (Sınırda)", level: "amber" };
+    return { text: "Yetersiz Kalabilir", level: "red" };
   };
 
   const compareRam = () => {
-    const minRamNeeded = parseInt(game.sysMin.ram) || 8;
-    if (userSpecs.ramGB >= minRamNeeded + 4) return { text: "Fazlasıyla Yeterli", level: "green" };
-    if (userSpecs.ramGB >= minRamNeeded) return { text: "Kıl Payı Uyumlu", level: "amber" };
-    return { text: "RAM Yetersiz", level: "red" };
+    const minRamNeeded = parseRamGB(game.sysMin.ram);
+    const recRamNeeded = parseRamGB(game.sysRec.ram);
+    const userRam = userSpecs.ramGB || 16;
+
+    if (userRam >= recRamNeeded) return { text: "Fazlasıyla Yeterli (Önerilen)", level: "green" };
+    if (userRam >= minRamNeeded) return { text: "Minimum Uyumlu (Sınırda)", level: "amber" };
+    return { text: "Yetersiz Bellek (RAM)", level: "red" };
   };
 
   const cpuStat = compareCpu();
   const gpuStat = compareGpu();
   const ramStat = compareRam();
+
+  const minStorage = (game.sysMin.storage || "").toLowerCase();
+  const recStorage = (game.sysRec.storage || "").toLowerCase();
+  const ssdRequired = minStorage.includes("ssd") || recStorage.includes("ssd");
+  const showSsdWarning = ssdRequired && !userSpecs.storageSSD;
 
   return (
     <div className="space-y-6">
@@ -54,6 +129,13 @@ export default function GameDetailsSpecs({ game, userSpecs }: GameDetailsSpecsPr
           <span className="text-cyan-400 font-bold font-sans">{userSpecs.ramGB} GB</span>
         </div>
       </div>
+
+      {showSsdWarning && (
+        <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-xl text-xs font-mono flex items-center gap-2">
+          <span className="text-sm">⚠️</span>
+          <span><strong>DİSK UYARISI:</strong> Bu oyun için SSD gereksinimi veya önerisi var, ancak profilinizde HDD seçili. Uzun yükleme süreleriyle karşılaşabilirsiniz.</span>
+        </div>
+      )}
 
       {/* Dynamic compatibility results grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

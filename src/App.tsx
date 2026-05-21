@@ -2,9 +2,12 @@ import { useState, useEffect } from "react";
 import { GAMES_DATA, Game } from "./gamesData";
 import { Review, UserSystemSpecs, GameNightEvent } from "./types";
 import Header from "./components/layout/Header";
+import Footer from "./components/layout/Footer";
 import GameHero from "./components/game/GameHero";
 import GameCard from "./components/game/GameCard";
 import GameDetailsModal from "./components/game/GameDetailsModal";
+import LibraryEmptyState from "./components/game/LibraryEmptyState";
+import LibraryFilters from "./components/game/LibraryFilters";
 import GamingCompanion from "./components/lobby/GamingCompanion";
 import SteamImportCard from "./components/profile/SteamImportCard";
 import GamerChatRooms from "./components/chat/GamerChatRooms";
@@ -12,7 +15,7 @@ import LoginModal, { GamerProfile } from "./components/profile/LoginModal";
 import GamerProfileModal from "./components/profile/GamerProfileModal";
 import GamerVoiceChat from "./components/layout/GamerVoiceChat";
 import { 
-  Gamepad2, AlertCircle, Settings, RefreshCw, Search, SlidersHorizontal, Filter, X
+  Gamepad2, AlertCircle, RefreshCw, Search, SlidersHorizontal
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { auth, db, handleFirestoreError, OperationType } from "./lib/firebase";
@@ -136,6 +139,9 @@ export default function App() {
           unsubscribeUserSnap = onSnapshot(userRef, (docSnap) => {
             if (docSnap.exists()) {
               const uData = docSnap.data();
+              if (uData.specs) {
+                setUserSpecs(uData.specs);
+              }
               setGamerProfile({
                 uid: firebaseUser.uid,
                 username: uData.username || firebaseUser.displayName || "GamerPlayer",
@@ -166,6 +172,12 @@ export default function App() {
           unsubscribeUserSnap = null;
         }
         setGamerProfile(null);
+        setUserSpecs({
+          cpuRank: 2,
+          gpuRank: 2,
+          ramGB: 16,
+          storageSSD: true
+        });
       }
       setLoadingProfile(false);
     });
@@ -729,38 +741,10 @@ export default function App() {
               className="space-y-6 animate-none"
             >
               {games.length === 0 ? (
-                /* Beautiful empty state for clean homepage requested */
-                <div className="max-w-4xl mx-auto px-4 py-20 text-center space-y-6">
-                  <div className="p-4 bg-slate-900/30 border border-slate-800 rounded-3xl relative inline-block">
-                    <Gamepad2 className="w-16 h-16 text-cyan-500/80 animate-pulse mx-auto" />
-                    <div className="absolute -top-1 -right-1 flex h-3 w-3">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-3 w-3 bg-cyan-500"></span>
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    <h3 className="text-2xl font-black text-white uppercase tracking-wider font-sans">KÜTÜPHANE TERTEMİZ & BOŞ DURUMDA!</h3>
-                    <p className="text-xs text-slate-400 max-w-xl mx-auto font-sans leading-relaxed">
-                      Sistem yöneticisi tüm başlangıç oyunlarını kütüphaneden kaldırdı. Siteniz şu an tamamen hazır ve temiz bir şablon sunuyor. Oyunları yönetmek ve eklemek için <strong>Yönetici Paneli</strong>'ni kullanabilir veya hazır şablonu anında geri getirebilirsiniz!
-                    </p>
-                  </div>
-                  <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-4">
-                    <button
-                      onClick={() => setActiveTab("admin")}
-                      className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-cyan-400 to-indigo-500 hover:from-cyan-300 hover:to-indigo-400 text-slate-950 font-black text-xs uppercase tracking-wider transition-all shadow-lg shadow-cyan-400/10 cursor-pointer"
-                    >
-                      <Settings className="w-4 h-4" />
-                      YÖNETİCİ PANELİ'NE GİT VE OYUN EKLE
-                    </button>
-                    <button
-                      onClick={handleLoadDefaults}
-                      className="flex items-center gap-2 px-6 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 font-bold text-xs uppercase tracking-wide transition-all cursor-pointer"
-                    >
-                      <RefreshCw className="w-4 h-4 text-purple-400" />
-                      HAZIR ŞABLON OYUNLARINI GERİ YÜKLE
-                    </button>
-                  </div>
-                </div>
+                <LibraryEmptyState
+                  setActiveTab={setActiveTab}
+                  onLoadDefaults={handleLoadDefaults}
+                />
               ) : (
                 <>
                   {/* Highlight Slideshow */}
@@ -814,120 +798,18 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Collapsible Rich Filters Drawer */}
-                    <AnimatePresence>
-                      {showFilterSection && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: "auto" }}
-                          exit={{ opacity: 0, height: 0 }}
-                          className="overflow-hidden bg-[#090e18]/80 rounded-2xl border border-slate-900 shadow-2xl"
-                        >
-                          <div className="p-4 md:p-5 space-y-4 font-sans text-xs">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                              {/* 1. Category filter (Filtrele / Kategori) */}
-                              <div className="space-y-2">
-                                <label className="text-[10px] uppercase font-bold text-slate-500 font-mono tracking-wider block">Kategori / Tür:</label>
-                                <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
-                                  <button
-                                    onClick={() => setSelectedTag("All")}
-                                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border ${
-                                      selectedTag === "All"
-                                        ? "bg-cyan-500/20 border-cyan-500/40 text-cyan-300"
-                                        : "bg-slate-950 hover:bg-slate-900 border-slate-900 text-slate-400"
-                                    }`}
-                                  >
-                                    Tümü (All)
-                                  </button>
-                                  {availableTags.map(tag => (
-                                    <button
-                                      key={tag}
-                                      onClick={() => setSelectedTag(tag)}
-                                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border ${
-                                        selectedTag.toLowerCase() === tag.toLowerCase()
-                                          ? "bg-cyan-500/20 border-cyan-500/40 text-cyan-300"
-                                          : "bg-slate-950 hover:bg-slate-900 border-slate-900 text-slate-400"
-                                      }`}
-                                    >
-                                      {tag}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-
-                              {/* 2. Player count Filter */}
-                              <div className="space-y-2">
-                                <label className="text-[10px] uppercase font-bold text-slate-500 font-mono tracking-wider block">Oyuncu Sayısı:</label>
-                                <div className="grid grid-cols-3 gap-1.5">
-                                  {[
-                                    { value: "All", label: "Tümü" },
-                                    { value: "single", label: "Tek Oyuncu" },
-                                    { value: "multi", label: "Multi / Co-op" }
-                                  ].map(opt => (
-                                    <button
-                                      key={opt.value}
-                                      onClick={() => setSelectedPlayersFilter(opt.value)}
-                                      className={`py-1.5 px-2 rounded-lg text-[10px] font-bold text-center transition-all cursor-pointer border ${
-                                        selectedPlayersFilter === opt.value
-                                          ? "bg-cyan-500/20 border-cyan-500/40 text-cyan-300"
-                                          : "bg-slate-950 hover:bg-slate-900 border-slate-900 text-slate-400"
-                                      }`}
-                                    >
-                                      {opt.label}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-
-                              {/* 3. Game size Filter */}
-                              <div className="space-y-2">
-                                <label className="text-[10px] uppercase font-bold text-slate-500 font-mono tracking-wider block">Depolama Boyutu:</label>
-                                <div className="grid grid-cols-4 gap-1.5">
-                                  {[
-                                    { value: "All", label: "Tümü" },
-                                    { value: "small", label: "< 10 GB" },
-                                    { value: "medium", label: "10-45 GB" },
-                                    { value: "large", label: "> 45 GB" }
-                                  ].map(opt => (
-                                    <button
-                                      key={opt.value}
-                                      onClick={() => setSelectedSizeFilter(opt.value)}
-                                      className={`py-1.5 px-2 rounded-lg text-[10px] font-bold text-center transition-all cursor-pointer border ${
-                                        selectedSizeFilter === opt.value
-                                          ? "bg-cyan-500/20 border-cyan-500/40 text-cyan-300"
-                                          : "bg-slate-950 hover:bg-slate-900 border-slate-900 text-slate-400"
-                                      }`}
-                                    >
-                                      {opt.label}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Reset filters row */}
-                            <div className="flex items-center justify-between pt-1 border-t border-slate-900/60">
-                              <span className="text-[10px] text-slate-500 italic">
-                                Seçenekleri işaretleyerek filtreleme kriterlerini daraltabilirsiniz.
-                              </span>
-                              {(selectedTag !== "All" || selectedPlayersFilter !== "All" || selectedSizeFilter !== "All" || searchQuery) && (
-                                <button
-                                  onClick={() => {
-                                    setSelectedTag("All");
-                                    setSelectedPlayersFilter("All");
-                                    setSelectedSizeFilter("All");
-                                    setSearchQuery("");
-                                  }}
-                                  className="text-[10px] text-rose-400 hover:underline flex items-center gap-1 cursor-pointer font-bold"
-                                >
-                                  Temizle & Sıfırla
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                    <LibraryFilters
+                      showFilterSection={showFilterSection}
+                      selectedTag={selectedTag}
+                      setSelectedTag={setSelectedTag}
+                      selectedPlayersFilter={selectedPlayersFilter}
+                      setSelectedPlayersFilter={setSelectedPlayersFilter}
+                      selectedSizeFilter={selectedSizeFilter}
+                      setSelectedSizeFilter={setSelectedSizeFilter}
+                      searchQuery={searchQuery}
+                      setSearchQuery={setSearchQuery}
+                      availableTags={availableTags}
+                    />
 
                     {filteredGames.length === 0 ? (
                       <div className="text-center py-20 bg-slate-950/40 rounded-2xl border border-slate-900">
@@ -1049,6 +931,8 @@ export default function App() {
             reviews={reviews}
             plannerEvents={plannerEvents}
             onToggleFavorite={handleToggleFavorite}
+            userSpecs={userSpecs}
+            onUpdateSpecs={setUserSpecs}
           />
         )}
       </AnimatePresence>
@@ -1094,24 +978,7 @@ export default function App() {
       </AnimatePresence>
 
       {/* Retro/Cyber Punk Styled Turkish Footer */}
-      <footer className="w-full bg-[#05060a] border-t border-slate-900/60 py-8 px-4 flex flex-col items-center justify-between gap-6 z-10 text-xs font-mono">
-        <div className="max-w-7xl w-full mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-slate-500">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse" />
-            <span>© 2026 WestPortal Gamer Hub • Arkadaş Ağ Arşivi</span>
-          </div>
-
-          <div className="flex flex-wrap gap-4 items-center justify-center">
-            <span className="text-slate-600">Teknoloji: React 19 + Tailwind v4 + Motion</span>
-            <span className="hidden md:inline text-slate-700">|</span>
-            <span className="text-slate-500">Oyun Veritabanı: <strong>{games.length} Seçkin Co-op & Hayatta Kalma Sınıfı</strong></span>
-          </div>
-        </div>
-
-        <div className="p-3 bg-slate-950/40 rounded-xl border border-slate-900 max-w-2xl text-center leading-relaxed text-[11px] text-slate-500 font-sans">
-          <strong>YASAL UYARI & METODOLOJİ:</strong> Bu portal arkadaş gruplarının oyun gecelerini programlaması ve çevrimiçi çok oyunculu (co-op) oyunları hızlıca bulması için tasarlanmış bağımsız bir hayran projesidir. İndirme butonları sizi doğrudan ilgili oyunun çok oyunculu indirme sayfasına yönlendirir.
-        </div>
-      </footer>
+      <Footer gamesCount={games.length} />
     </div>
   );
 }

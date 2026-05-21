@@ -39,6 +39,7 @@ export default function GamerVoiceChat({
   const [isMuted, setIsMuted] = useState(false);
   const [connectionState, setConnectionState] = useState<"disconnected" | "connecting" | "connected" | "failed">("disconnected");
   const [isDemo, setIsDemo] = useState(false);
+  const [canPlayAudio, setCanPlayAudio] = useState(true);
   
   // Audio level representations
   const [localAudioLevel, setLocalAudioLevel] = useState<number>(0);
@@ -50,6 +51,10 @@ export default function GamerVoiceChat({
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
+  const latestChannelIdRef = useRef<string | null>(null);
+
+  // Sync latest channel ID ref synchronously in the render phase to prevent race conditions during transitions
+  latestChannelIdRef.current = activeVoiceChannelId;
 
   const activeChannel = PRESET_VOICE_CHANNELS.find(c => c.id === activeVoiceChannelId);
 
@@ -68,16 +73,24 @@ export default function GamerVoiceChat({
     }
   };
 
-  // 1. LiveKit and Web Audio API initialization logic
+  // 1. Handle component unmount cleanup
+  useEffect(() => {
+    return () => {
+      cleanupAudio(true);
+    };
+  }, []);
+
+  // 2. LiveKit and Web Audio API initialization logic
   useEffect(() => {
     if (!activeVoiceChannelId) {
-      cleanupAudio();
+      cleanupAudio(false);
       setConnectionState("disconnected");
       return;
     }
 
     setConnectionState("connecting");
     setIsMuted(false);
+    setCanPlayAudio(true);
 
     // Call server endpoint to generate access token
     const fetchTokenAndConnect = async () => {
@@ -107,7 +120,7 @@ export default function GamerVoiceChat({
     fetchTokenAndConnect();
 
     return () => {
-      cleanupAudio();
+      cleanupAudio(false);
     };
   }, [activeVoiceChannelId]);
 
@@ -172,6 +185,38 @@ export default function GamerVoiceChat({
         setConnectionState("disconnected");
       });
 
+      // Listen to audio playback status changes to capture autoplay browser blocks
+      room.on(RoomEvent.AudioPlaybackStatusChanged, () => {
+        console.log("[VoiceChat] Audio playback status updated:", room.canPlaybackAudio);
+        setCanPlayAudio(room.canPlaybackAudio);
+      });
+
+      // Track subscription handlers to fix silent voice connection
+      room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+        if (track.kind === Track.Kind.Audio) {
+          console.log(`[VoiceChat] Subscribed to audio track from participant: ${participant.identity}`);
+          const element = track.attach();
+          element.className = "livekit-audio-element";
+          document.body.appendChild(element);
+          
+          // Explicitly trigger play to ensure browser starts audio playback immediately
+          element.play().catch((err) => {
+            console.warn("[VoiceChat] Audio element play failed (potentially blocked by autoplay):", err);
+          });
+
+          setCanPlayAudio(room.canPlaybackAudio);
+        }
+      });
+
+      room.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+        if (track.kind === Track.Kind.Audio) {
+          console.log(`[VoiceChat] Unsubscribed from audio track of participant: ${participant.identity}`);
+          const elements = track.detach();
+          elements.forEach((el) => el.remove());
+          setCanPlayAudio(room.canPlaybackAudio);
+        }
+      });
+
       // Connect using server signed credential JWT token
       await room.connect(url, token);
       console.log("[VoiceChat] LiveKit connected successfully!");
@@ -180,6 +225,7 @@ export default function GamerVoiceChat({
       await room.localParticipant.setMicrophoneEnabled(true);
       setConnectionState("connected");
       updateFirebaseVoiceState(activeVoiceChannelId, false);
+      setCanPlayAudio(room.canPlaybackAudio);
 
       // Setup a fast monitor interval to render real audio waves for local + remote speaking participants
       const volumeMonitor = setInterval(() => {
@@ -285,9 +331,11 @@ export default function GamerVoiceChat({
   };
 
   // Disposes and releases all active audio track inputs, contexts, and intervals safely
-  const cleanupAudio = () => {
+  const cleanupAudio = (isUnmounting: boolean = false) => {
     // 1. Fire offline state status to Firebase
-    if (activeVoiceChannelId) {
+    // If we are transitioning/switching to a different channel, skip setting state to null in Firestore
+    // to prevent the old disconnect request from racing and overwriting the new connect request.
+    if (activeVoiceChannelId && (isUnmounting || latestChannelIdRef.current === null)) {
       updateFirebaseVoiceState(null, false);
     }
 
@@ -322,6 +370,9 @@ export default function GamerVoiceChat({
       roomRef.current.disconnect();
       roomRef.current = null;
     }
+
+    // Clean up any remaining audio elements
+    document.querySelectorAll(".livekit-audio-element").forEach((el) => el.remove());
 
     setParticipantSpeakers({});
     setLocalAudioLevel(0);
@@ -420,6 +471,27 @@ export default function GamerVoiceChat({
           })}
         </div>
       </div>
+
+      {/* Autoplay Warning Banner */}
+      {!canPlayAudio && (
+        <button
+          type="button"
+          onClick={async () => {
+            if (roomRef.current) {
+              try {
+                await roomRef.current.startAudio();
+                setCanPlayAudio(roomRef.current.canPlaybackAudio);
+              } catch (err) {
+                console.error("Failed to start audio:", err);
+              }
+            }
+          }}
+          className="w-full py-2.5 px-3 text-[11px] bg-amber-500/15 border border-amber-500/30 text-amber-300 hover:bg-amber-500/25 rounded-xl font-bold flex items-center justify-center gap-1.5 animate-pulse transition-all cursor-pointer font-sans"
+        >
+          <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0" />
+          Tarayıcı Sesini Etkinleştirmek İçin Tıklayın
+        </button>
+      )}
 
       {/* 3. Occupants Badge Lists */}
       <div className="space-y-1.5">
