@@ -17,6 +17,16 @@ import { auth, db, handleFirestoreError, OperationType } from "./lib/firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc, setDoc, deleteDoc, collection, onSnapshot, query, orderBy, serverTimestamp, writeBatch } from "firebase/firestore";
 
+// Pre-seeded friends reviews in Turkish for some of the games to make it feel immediately active
+const DEFAULT_REVIEWS: Review[] = [
+
+];
+
+// Pre-seeded multiplayers events schedulers
+const DEFAULT_EVENTS: GameNightEvent[] = [
+
+];
+
 // Dynamically extract tags inside the App component instead of defining static array here
 
 export default function App() {
